@@ -1,0 +1,6 @@
+[submodule "dependencies/LBFGSpp"]
+	path = dependencies/LBFGSpp
+	url = https://github.com/yixuan/LBFGSpp.git
+[submodule "dependencies/googletest"]
+	path = dependencies/googletest
+	url = https://github.com/google/googletest.git
