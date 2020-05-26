@@ -177,13 +177,21 @@ public:
                     {
                         childBounds[i].m_start[this->bound_component_idx] = this->line.m[this->bound_component_idx];
                     }
-
-                    Eigen::Vector3f min_m;
-                    minimumDistances[i] = FindMinDist(query_point, childBounds[i].d_bound_1, childBounds[i].d_bound_2, childBounds[i].m_start, childBounds[i].m_end, min_m);
                 } else
                 {
-                    //TODO
+                    if(i == 0)
+                    {
+                        childBounds[i].d_bound_1 = this->d_bound;
+                        childBounds[i].d_bound_2 = bounds.d_bound_1;
+                    }else
+                    {
+                        childBounds[i].d_bound_1 = bounds.d_bound_1;
+                        childBounds[i].d_bound_2 = -this->d_bound;
+                    }
                 }
+
+                Eigen::Vector3f min_m;
+                minimumDistances[i] = FindMinDist(query_point, childBounds[i].d_bound_1, childBounds[i].d_bound_2, childBounds[i].m_start, childBounds[i].m_end, min_m);
             }
         }
 
@@ -325,10 +333,30 @@ private:
         /*if() // TODO: project direction vectors to bound domain, calculate variance of dot product, and use this to decide NodeType
         {
             type = NodeType::direction;
-            // TODO: calculate new bound vector: calc cross product of dir vectors with cur bound vector to obtain sin,
-            //       sort by sin, take median, new bound vector is cross product of bound_domain_normal with median dir vect
-            //       Given bounds b1 and b2 in parent, and new bound vector nb, the childrens bounds are as follows:
-            //       child 1: {nb, b1}, child 2: {b1, -nb}
+
+            // calculate new bound vector: calc cross product of dir vectors with cur bound vector to obtain sin,
+            // sort by sin, take median, new bound vector is cross product of bound_domain_normal with median dir vect
+            // Given bounds b1 and b2 in parent, and new bound vector nb, the childrens bounds are as follows:
+            // child 1: {nb, b1}, child 2: {b1, -nb}
+
+            Eigen::Vector3f cur_bound;
+            Eigen::Vector3f bound_domain_normal;
+            std::sort(lines_begin, lines_end, [&cur_bound, &bound_domain_normal](const Line& l1, const Line& l2){
+                auto calc_sine = [](const Eigen::Vector3f& d, const Eigen::Vector3f& bound_domain_normal, const Eigen::Vector3f& cur_bound){
+                    Eigen::Vector3f cross1 = (d - bound_domain_normal * bound_domain_normal.dot(d)).normalized().cross(cur_bound);
+                    auto sin = cross1.norm();
+                    if(cross1.dot(bound_domain_normal) < 0)
+                    {
+                        sin *= -1;
+                    }
+                    return sin;
+                };
+                auto sin1 = calc_sine(l1.d, bound_domain_normal, cur_bound);
+                auto sin2 = calc_sine(l2.d, bound_domain_normal, cur_bound);
+                return sin1 < sin2;
+            });
+            pivot = lines_begin + (lines_end - lines_begin)/2;
+            Eigen::Vector3f dir_bound = bound_domain_normal.cross(pivot->d).normalized();
         } else*/
         {
             type = NodeType::moment;
