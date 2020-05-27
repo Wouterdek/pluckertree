@@ -329,6 +329,8 @@ private:
         NodeType type;
         uint8_t splitComponent = 0;
         LineIt pivot;
+        Bounds subBounds1 = bounds;
+        Bounds subBounds2 = bounds;
 
         // Calculate max moment variance
         Eigen::Array3f mVarianceVect = calc_vec3_variance(lines_begin, lines_end, [](const Line& l){return l.m; });
@@ -354,9 +356,9 @@ private:
             return calc_sine(line.d, bound_domain_normal, cur_bound);
         });
         auto dMaxPossibleVariance = ; //TODO
-        auto dVarianceNormalized = dVariance / dMaxPossibleVariance;*/
+        auto dVarianceNormalized = dVariance / dMaxPossibleVariance;
 
-        /*if(dVarianceNormalized > mVarianceNormalized)
+        if(dVarianceNormalized > mVarianceNormalized)
         {
             type = NodeType::direction;
 
@@ -372,6 +374,10 @@ private:
             });
             pivot = lines_begin + (lines_end - lines_begin)/2;
             Eigen::Vector3f dir_bound = bound_domain_normal.cross(pivot->d).normalized();
+            subBounds1.d_bound_1;
+            subBounds1.d_bound_2;
+            subBounds2.d_bound_1;
+            subBounds2.d_bound_2;
         } else*/
         {
             type = NodeType::moment;
@@ -380,12 +386,14 @@ private:
                 return l1.m[splitComponent] < l2.m[splitComponent];
             });
             pivot = lines_begin + (lines_end - lines_begin)/2;
+            subBounds1.m_end[splitComponent] = (*pivot).m[splitComponent];
+            subBounds2.m_start[splitComponent] = (*pivot).m[splitComponent];
         }
 
         // Store iterators and bounds and then recurse
         auto node = std::make_unique<TreeNode>(type, splitComponent, *pivot);
-        node->children[0] = BuildNode(lines_begin, pivot, level + 1);
-        node->children[1] = BuildNode(pivot+1, lines_end, level + 1);
+        node->children[0] = BuildNode(lines_begin, pivot, subBounds1, level + 1);
+        node->children[1] = BuildNode(pivot+1, lines_end, subBounds2, level + 1);
         return std::move(node);
     }
 
