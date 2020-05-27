@@ -317,7 +317,7 @@ class TreeBuilder
 {
 private:
     template<class LineIt, typename = typename std::enable_if<std::is_same<Line, typename LineIt::value_type>::value>::type>
-    static std::unique_ptr<TreeNode> BuildNode(LineIt lines_begin, LineIt lines_end, int level)
+    static std::unique_ptr<TreeNode> BuildNode(LineIt lines_begin, LineIt lines_end, const Bounds& bounds, int level)
     {
         auto lineCount = std::distance(lines_begin, lines_end);
         if(lineCount == 0)
@@ -330,7 +330,33 @@ private:
         uint8_t splitComponent = 0;
         LineIt pivot;
 
-        /*if() // TODO: project direction vectors to bound domain, calculate variance of dot product, and use this to decide NodeType
+        // Calculate max moment variance
+        Eigen::Array3f mVarianceVect = calc_vec3_variance(lines_begin, lines_end, [](const Line& l){return l.m; });
+        auto mVariance = mVarianceVect.maxCoeff(&splitComponent);
+        auto mBoundCompDist = (bounds.m_end[splitComponent] - bounds.m_start[splitComponent]);
+        auto mMaxPossibleVariance = (mBoundCompDist * mBoundCompDist) / 4;
+        auto mVarianceNormalized = mVariance / mMaxPossibleVariance;
+
+        // Calculate directional variance
+        // project direction vectors to bound domain, calculate variance of sine of angle to bound, and use this to decide NodeType
+        /*Eigen::Vector3f cur_bound;
+        Eigen::Vector3f bound_domain_normal;
+        auto calc_sine = [](const Eigen::Vector3f& d, const Eigen::Vector3f& bound_domain_normal, const Eigen::Vector3f& cur_bound){
+            Eigen::Vector3f cross1 = (d - bound_domain_normal * bound_domain_normal.dot(d)).normalized().cross(cur_bound);
+            auto sin = cross1.norm();
+            if(cross1.dot(bound_domain_normal) < 0)
+            {
+                sin *= -1;
+            }
+            return sin;
+        };
+        auto dVariance = calc_variance(lines_begin, lines_end, [&bound_domain_normal, &cur_bound, calc_sine](const Line& line){
+            return calc_sine(line.d, bound_domain_normal, cur_bound);
+        });
+        auto dMaxPossibleVariance = ; //TODO
+        auto dVarianceNormalized = dVariance / dMaxPossibleVariance;*/
+
+        /*if(dVarianceNormalized > mVarianceNormalized)
         {
             type = NodeType::direction;
 
@@ -339,18 +365,7 @@ private:
             // Given bounds b1 and b2 in parent, and new bound vector nb, the childrens bounds are as follows:
             // child 1: {nb, b1}, child 2: {b1, -nb}
 
-            Eigen::Vector3f cur_bound;
-            Eigen::Vector3f bound_domain_normal;
-            std::sort(lines_begin, lines_end, [&cur_bound, &bound_domain_normal](const Line& l1, const Line& l2){
-                auto calc_sine = [](const Eigen::Vector3f& d, const Eigen::Vector3f& bound_domain_normal, const Eigen::Vector3f& cur_bound){
-                    Eigen::Vector3f cross1 = (d - bound_domain_normal * bound_domain_normal.dot(d)).normalized().cross(cur_bound);
-                    auto sin = cross1.norm();
-                    if(cross1.dot(bound_domain_normal) < 0)
-                    {
-                        sin *= -1;
-                    }
-                    return sin;
-                };
+            std::sort(lines_begin, lines_end, [&cur_bound, &bound_domain_normal, calc_sine](const Line& l1, const Line& l2){
                 auto sin1 = calc_sine(l1.d, bound_domain_normal, cur_bound);
                 auto sin2 = calc_sine(l2.d, bound_domain_normal, cur_bound);
                 return sin1 < sin2;
@@ -360,9 +375,6 @@ private:
         } else*/
         {
             type = NodeType::moment;
-
-            Eigen::Array3f mVariance = calc_vec3_variance(lines_begin, lines_end, [](const Line& l){return l.m; });
-            float maxMVar = mVariance.maxCoeff(&splitComponent);
 
             std::sort(lines_begin, lines_end, [splitComponent](const Line& l1, const Line& l2){
                 return l1.m[splitComponent] < l2.m[splitComponent];
