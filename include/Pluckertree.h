@@ -58,7 +58,7 @@ public:
 
 	static Line FromTwoPoints(const Eigen::Vector3f& point_a, const Eigen::Vector3f& point_b)
 	{
-        return FromPointAndDirection(point_a, point_b-point_a);
+        return FromPointAndDirection(point_a, (point_b-point_a).normalized());
 	}
 
     Eigen::Vector3f d;
