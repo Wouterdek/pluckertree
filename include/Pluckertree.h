@@ -47,7 +47,7 @@ public:
 	{
 	    auto p = point - point.dot(direction)*direction;
 	    auto m = p.cross(direction);
-	    return Line(direction, cart2spherical(m));
+	    return Line(direction, m);
 
 	    //Alternatively:
 	    auto dot = point.dot(direction);
@@ -61,18 +61,27 @@ public:
         return FromPointAndDirection(point_a, (point_b-point_a).normalized());
 	}
 
-    Eigen::Vector3f d;
-	Eigen::Vector3f m; // In spherical coordinates (azimuth, elevation with 0=Z+, radius)
+    Eigen::Vector3f d; // Carthesian
+	Eigen::Vector3f m; // Carthesian
+
+    bool operator==(const Line& rhs) const
+    {
+        return (d == rhs.d) && (m == rhs.m);
+    }
+    bool operator!=(const Line& rhs) const
+    {
+        return !operator==(rhs);
+    }
 };
 
 class TreeNode;
 
 struct Bounds
 {
-    Eigen::Vector3f d_bound_1;
-    Eigen::Vector3f d_bound_2;
-    Eigen::Vector3f m_start;
-    Eigen::Vector3f m_end;
+    Eigen::Vector3f d_bound_1; // Carthesian
+    Eigen::Vector3f d_bound_2; // Carthesian
+    Eigen::Vector3f m_start; // Spherical
+    Eigen::Vector3f m_end; // Spherical
 
     Bounds(Eigen::Vector3f d_bound_1, Eigen::Vector3f d_bound_2, Eigen::Vector3f m_start, Eigen::Vector3f m_end)
     : d_bound_1(std::move(d_bound_1)), d_bound_2(std::move(d_bound_2)), m_start(std::move(m_start)), m_end(std::move(m_end)) {}
@@ -99,14 +108,13 @@ enum class NodeType : uint8_t
  *  @brief  Inserts given value into the iterator range before specified position.
  *  @param  __position  The position.
  *  @param  __x  Data to be inserted.
- *  @return  An iterator that points to the inserted data.
  *
  *  This function will insert a copy of the given value before the specified location.
  *  All values will shift towards the end, with the last element being discarded.
  *  position must be smaller than end.
  */
-template<typename Iterator, typename Value, typename = typename std::enable_if<std::is_same<Value, typename Iterator::value_type>::value>::type>
-Iterator iter_insert(Iterator position, Iterator end, const Value& val)
+template<typename Iterator, typename Value, typename = typename std::enable_if<std::is_same<Value, typename std::iterator_traits<Iterator>::value_type>::value>::type>
+void iter_insert(Iterator position, Iterator end, const Value& val)
 {
     assert(position < end);
 
@@ -122,32 +130,22 @@ class TreeNode
 public:
     std::array<std::unique_ptr<TreeNode>, 2> children;
     Line line;
-    Eigen::Vector3f d_bound;
+    Eigen::Vector3f d_bound; //carthesian
+    float m_component; //spherical
     NodeType type : 1;
     //uint8_t bound_idx : 1;
     uint8_t bound_component_idx : 2;
     //uint8_t pad1 : 6;
     //uint8_t pad2[7];
 
-    TreeNode(uint8_t bound_component_idx, Line line)
-        : type(NodeType::moment), bound_component_idx(bound_component_idx), line(std::move(line)), children() {}
+    TreeNode(uint8_t bound_component_idx, float m_component, Line line)
+        : type(NodeType::moment), bound_component_idx(bound_component_idx), m_component(m_component), line(std::move(line)), children() {}
 
     TreeNode(Eigen::Vector3f d_bound, Line line)
             : type(NodeType::direction), d_bound(std::move(d_bound)), line(std::move(line)), children() {}
 
-    /*double CalcDistLowerBound(const Eigen::Vector3f& q, Eigen::Vector3f& optimal_moment)
-    {
-        if(type == NodeType::moment)
-        {
-            return FindMinDist(q, this->bound_1, this->bound_2, this->m_start, this->m_end, optimal_moment);
-        }
-        else if(type == NodeType::direction)
-        {
 
-        }
-    }*/
-
-    template<class OutputIt, typename = typename std::enable_if<std::is_same<Line, typename OutputIt::value_type>::value>::type>
+    template<class OutputIt, typename = typename std::enable_if<std::is_same<const Line*, typename std::iterator_traits<OutputIt>::value_type>::value>::type>
     typename std::iterator_traits<OutputIt>::difference_type FindNeighbours(
             const Eigen::Vector3f& query_point,
             OutputIt out_first, OutputIt out_last,
@@ -172,10 +170,10 @@ public:
                 {
                     if(i == 0)
                     {
-                        childBounds[i].m_end[this->bound_component_idx] = this->line.m[this->bound_component_idx];
+                        childBounds[i].m_end[this->bound_component_idx] = m_component;
                     }else
                     {
-                        childBounds[i].m_start[this->bound_component_idx] = this->line.m[this->bound_component_idx];
+                        childBounds[i].m_start[this->bound_component_idx] = m_component;
                     }
                 } else
                 {
@@ -206,34 +204,37 @@ public:
         auto resultsListLength = std::distance(out_first, out_last);
         for(uint8_t idx : permutation)
         {
-            if(minimumDistances[idx] > max_dist)
+            if(/*minimumDistances[idx] > max_dist ||*/ children[idx] == nullptr) //max_dist_check
             {
                 break;
             }
 
-            auto nbResultsInNode = FindNeighbours(query_point, out_first, out_last, max_dist, childBounds[idx]);
+            auto nbResultsInNode = children[idx]->FindNeighbours(query_point, out_first, out_last, max_dist, childBounds[idx]);
             nbResultsFound = std::min(nbResultsFound + nbResultsInNode, resultsListLength);
         }
 
-        if((query_point.cross(line.d) - line.m).norm() < max_dist)
+        auto dist = (query_point.cross(line.d) - line.m).norm();
+        //if(dist < max_dist) //max_dist_check
         {
             max_dist = insert(&line, out_first, out_last, query_point);
+            nbResultsFound++;
         }
 
         return nbResultsFound;
     }
 
-    template<class OutputIt, typename = typename std::enable_if<std::is_same<Line, typename OutputIt::value_type>::value>::type>
+    template<class OutputIt, typename = typename std::enable_if<std::is_same<const Line*, typename std::iterator_traits<OutputIt>::value_type>::value>::type>
     static float insert(const Line* elem, OutputIt out_first, OutputIt out_end, const Eigen::Vector3f& query_point)
     {
         auto distF = [](const Line* l, const Eigen::Vector3f& p)
         {
-            return p.cross(l->d) - l->m;
+            Eigen::Vector3f v = p.cross(l->d) - l->m;
+            return v;
         };
 
         auto it = std::lower_bound(out_first, out_end, elem, [&query_point, distF](const Line* c1, const Line* c2){
-            auto dist1 = c1 == nullptr ? 1E99 : distF(c1, query_point).squaredNorm();
-            auto dist2 = c2 == nullptr ? 1E99 : distF(c1, query_point).squaredNorm();
+            auto dist1 = c1 == nullptr ? std::numeric_limits<float>::infinity() : distF(c1, query_point).squaredNorm();
+            auto dist2 = c2 == nullptr ? std::numeric_limits<float>::infinity() : distF(c2, query_point).squaredNorm();
             return dist1 < dist2;
         });
 
@@ -245,7 +246,7 @@ public:
         auto lastElemPtr = *(out_end - 1);
         if(lastElemPtr == nullptr)
         {
-            return std::numeric_limits<float>::max();
+            return std::numeric_limits<float>::infinity();
         }
 
         return distF(lastElemPtr, query_point).norm();
@@ -264,7 +265,7 @@ public:
     //void Add(const Line& line);
 	//bool Remove(const Line* line);
 
-    template<class OutputIt, typename = typename std::enable_if<std::is_same<Line, typename OutputIt::value_type>::value>::type>
+	template<class OutputIt, typename = typename std::enable_if<std::is_same<const Line*, typename std::iterator_traits<OutputIt>::value_type>::value>::type>
     typename std::iterator_traits<OutputIt>::difference_type FindNeighbours(
     	const Eigen::Vector3f& query_point,
 		OutputIt out_first, OutputIt out_last, 
@@ -299,7 +300,7 @@ public:
         auto resultsListLength = std::distance(out_first, out_last);
         for(uint8_t idx : permutation)
         {
-            if(minimumDistances[idx] > max_dist || sectors[idx].rootNode == nullptr)
+            if(/*minimumDistances[idx] > max_dist || */sectors[idx].rootNode == nullptr) //max_dist_check
             {
                 break;
             }
@@ -316,7 +317,7 @@ public:
 class TreeBuilder
 {
 private:
-    template<class LineIt, typename = typename std::enable_if<std::is_same<Line, typename LineIt::value_type>::value>::type>
+    template<class LineIt, typename = typename std::enable_if<std::is_same<Line, typename std::iterator_traits<LineIt>::value_type>::value>::type>
     static std::unique_ptr<TreeNode> BuildNode(LineIt lines_begin, LineIt lines_end, const Bounds& bounds, int level)
     {
         auto lineCount = std::distance(lines_begin, lines_end);
@@ -326,14 +327,15 @@ private:
         }
 
         // Find axis with largest variance and split in 2 there
-        NodeType type;
+        std::unique_ptr<TreeNode> node;
+        //NodeType type;
         uint8_t splitComponent = 0;
         LineIt pivot;
         Bounds subBounds1 = bounds;
         Bounds subBounds2 = bounds;
 
         // Calculate max moment variance
-        Eigen::Array3f mVarianceVect = calc_vec3_variance(lines_begin, lines_end, [](const Line& l){return l.m; });
+        Eigen::Array3f mVarianceVect = calc_vec3_variance(lines_begin, lines_end, [](const Line& l){return cart2spherical(l.m); });
         auto mVariance = mVarianceVect.maxCoeff(&splitComponent);
         auto mBoundCompDist = (bounds.m_end[splitComponent] - bounds.m_start[splitComponent]);
         auto mMaxPossibleVariance = (mBoundCompDist * mBoundCompDist) / 4;
@@ -360,8 +362,6 @@ private:
 
         if(dVarianceNormalized > mVarianceNormalized)
         {
-            type = NodeType::direction;
-
             // calculate new bound vector: calc cross product of dir vectors with cur bound vector to obtain sin,
             // sort by sin, take median, new bound vector is cross product of bound_domain_normal with median dir vect
             // Given bounds b1 and b2 in parent, and new bound vector nb, the childrens bounds are as follows:
@@ -378,32 +378,33 @@ private:
             subBounds1.d_bound_2;
             subBounds2.d_bound_1;
             subBounds2.d_bound_2;
+
+            node = std::make_unique<TreeNode>(dir_bound, *pivot);
         } else*/
         {
-            type = NodeType::moment;
-
             std::sort(lines_begin, lines_end, [splitComponent](const Line& l1, const Line& l2){
-                return l1.m[splitComponent] < l2.m[splitComponent];
+                return cart2spherical(l1.m)[splitComponent] < cart2spherical(l2.m)[splitComponent];
             });
             pivot = lines_begin + (lines_end - lines_begin)/2;
             subBounds1.m_end[splitComponent] = (*pivot).m[splitComponent];
             subBounds2.m_start[splitComponent] = (*pivot).m[splitComponent];
+
+            node = std::make_unique<TreeNode>(splitComponent, cart2spherical((*pivot).m)[splitComponent], *pivot);
         }
 
         // Store iterators and bounds and then recurse
-        auto node = std::make_unique<TreeNode>(type, splitComponent, *pivot);
         node->children[0] = BuildNode(lines_begin, pivot, subBounds1, level + 1);
         node->children[1] = BuildNode(pivot+1, lines_end, subBounds2, level + 1);
         return std::move(node);
     }
 
 public:
-	template<class LineIt, typename = typename std::enable_if<std::is_same<Line, typename LineIt::value_type>::value>::type>
+    template<class LineIt, typename = typename std::enable_if<std::is_same<Line, typename std::iterator_traits<LineIt>::value_type>::value>::type>
     static Tree Build(LineIt lines_first, LineIt lines_last)
     {
         // Create sectors
         using Eigen::Vector3f;
-        constexpr float max_dist = 100;
+        constexpr float max_dist = 150; //TODO
         std::array<TreeSector, 12> sectors {
             // Top sector
             TreeSector(Vector3f(1, 0, 0), Vector3f(1, 0, 0), Vector3f(-M_PI, 0, 0), Vector3f(M_PI, M_PI/4, max_dist)),
@@ -435,7 +436,7 @@ public:
                 for(LineIt it = it_begin; it < lines_last; ++it)
                 {
                     const Line& line = *it;
-                    if(Eigen::AlignedBox<float, 3>(sector.bounds.m_start, sector.bounds.m_end).contains(line.m)
+                    if(Eigen::AlignedBox<float, 3>(sector.bounds.m_start, sector.bounds.m_end).contains(cart2spherical(line.m))
                        && sector.bounds.d_bound_1.dot(line.d) >= 0 //greater or equal, or just greater?
                        && sector.bounds.d_bound_2.dot(line.d) >= 0)
                     {
@@ -455,8 +456,8 @@ public:
             for(TreeSector& sector : sectors)
             {
                 LineIt it_end = line_sector_ends[idx];
-
-                sector.rootNode = BuildNode(it_begin, it_end);
+                auto count = std::distance(it_begin, it_end);
+                sector.rootNode = BuildNode(it_begin, it_end, sector.bounds, 0);
 
                 it_begin = it_end;
 

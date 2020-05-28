@@ -49,7 +49,7 @@ Eigen::Array3f calc_vec3_variance(Iter begin, Iter end, Accessor f)
     Eigen::Array3f total(0, 0, 0);
     for(auto it = begin; it < end; ++it)
     {
-        total += f(*it);
+        total += f(*it).array();
     }
 
     Eigen::Array3f avg = total / std::distance(begin, end);
@@ -57,7 +57,7 @@ Eigen::Array3f calc_vec3_variance(Iter begin, Iter end, Accessor f)
     Eigen::Array3f variance(0, 0, 0);
     for(auto it = begin; it < end; ++it)
     {
-        Eigen::Array3f cur = f(*it) - avg;
+        Eigen::Array3f cur = f(*it).array() - avg;
         variance += cur * cur;
     }
     variance /= (std::distance(begin, end) - 1);
