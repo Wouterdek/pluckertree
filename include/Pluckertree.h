@@ -125,6 +125,8 @@ void iter_insert(Iterator position, Iterator end, const Value& val)
     *position = val;
 }
 
+constexpr float margin = 0;
+
 class TreeNode
 {
 public:
@@ -137,6 +139,8 @@ public:
     uint8_t bound_component_idx : 2;
     //uint8_t pad1 : 6;
     //uint8_t pad2[7];
+
+    static int visited; //TODO: remove
 
     TreeNode(uint8_t bound_component_idx, float m_component, Line line)
         : type(NodeType::moment), bound_component_idx(bound_component_idx), m_component(m_component), line(std::move(line)), children() {}
@@ -153,6 +157,8 @@ public:
             const Bounds& bounds
     ) const
     {
+        visited++;
+
         std::array<float, 2> minimumDistances {};
         std::array<Bounds, 2> childBounds {};
 
@@ -204,7 +210,7 @@ public:
         auto resultsListLength = std::distance(out_first, out_last);
         for(uint8_t idx : permutation)
         {
-            if(/*minimumDistances[idx] > max_dist ||*/ children[idx] == nullptr) //max_dist_check
+            if(minimumDistances[idx] > max_dist+margin || children[idx] == nullptr) //max_dist_check
             {
                 break;
             }
@@ -214,7 +220,7 @@ public:
         }
 
         auto dist = (query_point.cross(line.d) - line.m).norm();
-        //if(dist < max_dist) //max_dist_check
+        if(dist < max_dist+margin) //max_dist_check
         {
             max_dist = insert(&line, out_first, out_last, query_point);
             nbResultsFound++;
@@ -258,9 +264,9 @@ class Tree
 private:
 
 public:
-    std::array<TreeSector, 12> sectors;
+    std::array<TreeSector, 24> sectors;
 
-    explicit Tree(std::array<TreeSector, 12> sectors) : sectors(std::move(sectors)) {}
+    explicit Tree(std::array<TreeSector, 24> sectors) : sectors(std::move(sectors)) {}
 
     //void Add(const Line& line);
 	//bool Remove(const Line* line);
@@ -272,7 +278,9 @@ public:
     	float& max_dist
 	) const
     {
-        std::array<float, 12> minimumDistances {};
+        TreeNode::visited = 0;
+
+        std::array<float, 24> minimumDistances {};
         for(int i = 0; i < minimumDistances.size(); ++i)
         {
             const TreeSector& sector = sectors[i];
@@ -286,7 +294,7 @@ public:
             }
         }
 
-        std::array<uint8_t, 12> permutation {};
+        std::array<uint8_t, 24> permutation {};
         std::iota(permutation.begin(), permutation.end(), 0);
         std::sort(permutation.begin(), permutation.end(), [it = minimumDistances.begin()](uint8_t a, uint8_t b) {
             return *(it + a) < *(it + b);
@@ -300,7 +308,7 @@ public:
         auto resultsListLength = std::distance(out_first, out_last);
         for(uint8_t idx : permutation)
         {
-            if(/*minimumDistances[idx] > max_dist || */sectors[idx].rootNode == nullptr) //max_dist_check
+            if(minimumDistances[idx] > max_dist+margin || sectors[idx].rootNode == nullptr) //max_dist_check
             {
                 break;
             }
@@ -313,6 +321,7 @@ public:
         return nbResultsFound;
     }
 };
+
 
 class TreeBuilder
 {
@@ -405,29 +414,41 @@ public:
         // Create sectors
         using Eigen::Vector3f;
         constexpr float max_dist = 150; //TODO
-        std::array<TreeSector, 12> sectors {
+        std::array<TreeSector, 24> sectors {
             // Top sector
-            TreeSector(Vector3f(1, 0, 0), Vector3f(1, 0, 0), Vector3f(-M_PI, 0, 0), Vector3f(M_PI, M_PI/4, max_dist)),
-            TreeSector(Vector3f(-1, 0, 0), Vector3f(-1 ,0, 0), Vector3f(-M_PI, 0, 0), Vector3f(M_PI, M_PI/4, max_dist)),
+            TreeSector(Vector3f(1, 0, 0), Vector3f(0, 1, 0), Vector3f(-M_PI, 0, 0), Vector3f(M_PI, M_PI/4, max_dist)),
+            TreeSector(Vector3f(0, 1, 0), Vector3f(-1, 0, 0), Vector3f(-M_PI, 0, 0), Vector3f(M_PI, M_PI/4, max_dist)),
+            TreeSector(Vector3f(-1, 0, 0), Vector3f(0, -1, 0), Vector3f(-M_PI, 0, 0), Vector3f(M_PI, M_PI/4, max_dist)),
+            TreeSector(Vector3f(0, -1, 0), Vector3f(1, 0, 0), Vector3f(-M_PI, 0, 0), Vector3f(M_PI, M_PI/4, max_dist)),
             // Bottom sector
-            TreeSector(Vector3f(1, 0, 0), Vector3f(1, 0, 0), Vector3f(-M_PI, 3*M_PI/4, 0), Vector3f(M_PI, M_PI, max_dist)),
-            TreeSector(Vector3f(-1, 0, 0), Vector3f(-1, 0, 0), Vector3f(-M_PI, 3*M_PI/4, 0), Vector3f(M_PI, M_PI, max_dist)),
+            TreeSector(Vector3f(1, 0, 0), Vector3f(0, 1, 0), Vector3f(-M_PI, 3*M_PI/4, 0), Vector3f(M_PI, M_PI, max_dist)),
+            TreeSector(Vector3f(0, 1, 0), Vector3f(-1, 0, 0), Vector3f(-M_PI, 3*M_PI/4, 0), Vector3f(M_PI, M_PI, max_dist)),
+            TreeSector(Vector3f(-1, 0, 0), Vector3f(0, -1, 0), Vector3f(-M_PI, 3*M_PI/4, 0), Vector3f(M_PI, M_PI, max_dist)),
+            TreeSector(Vector3f(0, -1, 0), Vector3f(1, 0, 0), Vector3f(-M_PI, 3*M_PI/4, 0), Vector3f(M_PI, M_PI, max_dist)),
             // -X -Y sector
-            TreeSector(Vector3f(0, 0, 1), Vector3f(0, 0, 1), Vector3f(-M_PI, M_PI/4, 0), Vector3f(-M_PI/2, 3*M_PI/4, max_dist)),
-            TreeSector(Vector3f(0, 0, -1), Vector3f(0, 0, -1), Vector3f(-M_PI, M_PI/4, 0), Vector3f(-M_PI/2, 3*M_PI/4, max_dist)),
+            TreeSector(Vector3f(0, 0, 1), Vector3f(1, -1, 0).normalized(), Vector3f(-M_PI, M_PI/4, 0), Vector3f(-M_PI/2, 3*M_PI/4, max_dist)),
+            TreeSector(Vector3f(1, -1, 0).normalized(), Vector3f(0, 0, -1), Vector3f(-M_PI, M_PI/4, 0), Vector3f(-M_PI/2, 3*M_PI/4, max_dist)),
+            TreeSector(Vector3f(0, 0, -1), Vector3f(-1, 1, 0).normalized(), Vector3f(-M_PI, M_PI/4, 0), Vector3f(-M_PI/2, 3*M_PI/4, max_dist)),
+            TreeSector(Vector3f(-1, 1, 0).normalized(), Vector3f(0, 0, 1), Vector3f(-M_PI, M_PI/4, 0), Vector3f(-M_PI/2, 3*M_PI/4, max_dist)),
             // +X -Y sector
-            TreeSector(Vector3f(0, 0, 1), Vector3f(0, 0, 1), Vector3f(-M_PI/2, M_PI/4, 0), Vector3f(0, 3*M_PI/4, max_dist)),
-            TreeSector(Vector3f(0, 0, -1), Vector3f(0, 0, -1), Vector3f(-M_PI/2, M_PI/4, 0), Vector3f(0, 3*M_PI/4, max_dist)),
+            TreeSector(Vector3f(0, 0, 1), Vector3f(-1, -1, 0).normalized(), Vector3f(-M_PI/2, M_PI/4, 0), Vector3f(0, 3*M_PI/4, max_dist)),
+            TreeSector(Vector3f(-1, -1, 0).normalized(), Vector3f(0, 0, -1), Vector3f(-M_PI/2, M_PI/4, 0), Vector3f(0, 3*M_PI/4, max_dist)),
+            TreeSector(Vector3f(0, 0, -1), Vector3f(1, 1, 0).normalized(), Vector3f(-M_PI/2, M_PI/4, 0), Vector3f(0, 3*M_PI/4, max_dist)),
+            TreeSector(Vector3f(1, 1, 0).normalized(), Vector3f(0, 0, 1), Vector3f(-M_PI/2, M_PI/4, 0), Vector3f(0, 3*M_PI/4, max_dist)),
             // +X +Y sector
-            TreeSector(Vector3f(0, 0, 1), Vector3f(0, 0, 1), Vector3f(0, M_PI/4, 0), Vector3f(M_PI/2, 3*M_PI/4, max_dist)),
-            TreeSector(Vector3f(0, 0, -1), Vector3f(0, 0, -1), Vector3f(0, M_PI/4, 0), Vector3f(M_PI/2, 3*M_PI/4, max_dist)),
+            TreeSector(Vector3f(0, 0, 1), Vector3f(1, -1, 0).normalized(), Vector3f(0, M_PI/4, 0), Vector3f(M_PI/2, 3*M_PI/4, max_dist)),
+            TreeSector(Vector3f(1, -1, 0).normalized(), Vector3f(0, 0, -1), Vector3f(0, M_PI/4, 0), Vector3f(M_PI/2, 3*M_PI/4, max_dist)),
+            TreeSector(Vector3f(0, 0, -1), Vector3f(-1, 1, 0).normalized(), Vector3f(0, M_PI/4, 0), Vector3f(M_PI/2, 3*M_PI/4, max_dist)),
+            TreeSector(Vector3f(-1, 1, 0).normalized(), Vector3f(0, 0, 1), Vector3f(0, M_PI/4, 0), Vector3f(M_PI/2, 3*M_PI/4, max_dist)),
             // -X +Y sector
-            TreeSector(Vector3f(0, 0, 1), Vector3f(0, 0, 1), Vector3f(M_PI/2, M_PI/4, 0), Vector3f(M_PI, 3*M_PI/4, max_dist)),
-            TreeSector(Vector3f(0, 0, -1), Vector3f(0, 0, -1), Vector3f(M_PI/2, M_PI/4, 0), Vector3f(M_PI, 3*M_PI/4, max_dist))
+            TreeSector(Vector3f(0, 0, 1), Vector3f(-1, -1, 0).normalized(), Vector3f(M_PI/2, M_PI/4, 0), Vector3f(M_PI, 3*M_PI/4, max_dist)),
+            TreeSector(Vector3f(-1, -1, 0).normalized(), Vector3f(0, 0, -1), Vector3f(M_PI/2, M_PI/4, 0), Vector3f(M_PI, 3*M_PI/4, max_dist)),
+            TreeSector(Vector3f(0, 0, -1), Vector3f(1, 1, 0).normalized(), Vector3f(M_PI/2, M_PI/4, 0), Vector3f(M_PI, 3*M_PI/4, max_dist)),
+            TreeSector(Vector3f(1, 1, 0).normalized(), Vector3f(0, 0, 1), Vector3f(M_PI/2, M_PI/4, 0), Vector3f(M_PI, 3*M_PI/4, max_dist))
         };
 
         // Sort lines into sectors
-        std::array<LineIt, 12> line_sector_ends;
+        std::array<LineIt, 24> line_sector_ends;
         {
             LineIt it_begin = lines_first;
             int idx = 0;

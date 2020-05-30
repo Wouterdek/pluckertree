@@ -45,7 +45,7 @@ public:
         Vector3_t qpd = qp.normalized();
         auto u = (qp - q).norm();
 
-        auto sin_gamma = std::min(k.norm()/qp.norm(), (number_t)1.0f);
+        auto sin_gamma = std::min(r_k/qp.norm(), (number_t)1.0f);
         auto cos_gamma = std::sqrt(1 - sin_gamma * sin_gamma);
 
         Vector3_t da = qpd * cos_gamma + kd.cross(qpd) * sin_gamma;
@@ -66,7 +66,6 @@ public:
         }
 
         Vector3_t db = - qpd * cos_gamma + kd.cross(qpd) * sin_gamma;
-        //Vector3_t db = qpd * cos_gamma - kd.cross(qpd) * sin_gamma;
         Vector3_t d_beta;
         auto db_dot_h1 = db.dot(h1);
         auto db_dot_h2 = db.dot(h2);
@@ -90,7 +89,7 @@ public:
         auto f = std::sqrt(u*u + v*v);
 
         // partial
-        auto sin_theta_k = std::sin(theta_k);
+        /*auto sin_theta_k = std::sin(theta_k);
         auto pow2_sin_theta_k = sin_theta_k * sin_theta_k;
         auto sin_2theta_k = std::sin(2*theta_k);
 
@@ -301,6 +300,8 @@ public:
 
 namespace pluckertree
 {
+    int pluckertree::TreeNode::visited = 0;
+
     double FindMinDist(
             const Eigen::Vector3f& point,
             const Eigen::Vector3f& dirLowerBound,
@@ -310,6 +311,7 @@ namespace pluckertree
             Eigen::Vector3f& minimum
     )
     {
+
         nlopt::opt opt(nlopt::LN_COBYLA, 3);
 
         std::vector<double> lb(momentLowerBound.data(), momentLowerBound.data() + momentLowerBound.rows() * momentLowerBound.cols());
@@ -329,6 +331,7 @@ namespace pluckertree
         opt.set_min_objective(obj_func, &fun);
 
         opt.set_xtol_rel(1e-6);
+        opt.set_stopval(1e-6);
 
         Vector vec = (momentLowerBound + (momentUpperBound - momentLowerBound)/2.0f).cast<double>();
         std::vector<double> x(vec.data(), vec.data() + vec.rows() * vec.cols());
