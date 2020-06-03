@@ -29,6 +29,16 @@ double FindMinDist(
         Eigen::Vector3f& min
 );
 
+double FindMinHitDist(
+        const Eigen::Vector3f& point,
+        const Eigen::Vector3f& point_normal,
+        const Eigen::Vector3f& dirLowerBound,
+        const Eigen::Vector3f& dirUpperBound,
+        const Eigen::Vector3f& momentLowerBound,
+        const Eigen::Vector3f& momentUpperBound,
+        Eigen::Vector3f& min
+);
+
 double FindMinDist(
         const Eigen::Vector3f& point,
         const Eigen::Vector3f& dirLowerBound,
@@ -141,6 +151,7 @@ public:
     //uint8_t pad2[7];
 
     static int visited; //TODO: remove
+    static std::vector<float> results;
 
     TreeNode(uint8_t bound_component_idx, float m_component, Line line)
         : type(NodeType::moment), bound_component_idx(bound_component_idx), m_component(m_component), line(std::move(line)), children() {}
@@ -219,10 +230,15 @@ public:
             nbResultsFound = std::min(nbResultsFound + nbResultsInNode, resultsListLength);
         }
 
-        auto dist = (query_point.cross(line.d) - line.m).norm();
+        auto distF = [](const Line* l, const Eigen::Vector3f& p)
+        {
+            Eigen::Vector3f v = p.cross(l->d) - l->m;
+            return v;
+        };
+        auto dist = distF(&line, query_point).norm();
         if(dist < max_dist+margin) //max_dist_check
         {
-            max_dist = insert(&line, out_first, out_last, query_point);
+            max_dist = insert(&line, out_first, out_last, query_point, distF);
             nbResultsFound++;
         }
 
@@ -230,14 +246,96 @@ public:
     }
 
     template<class OutputIt, typename = typename std::enable_if<std::is_same<const Line*, typename std::iterator_traits<OutputIt>::value_type>::value>::type>
-    static float insert(const Line* elem, OutputIt out_first, OutputIt out_end, const Eigen::Vector3f& query_point)
+    typename std::iterator_traits<OutputIt>::difference_type FindNearestHits(
+            const Eigen::Vector3f& query_point,
+            const Eigen::Vector3f& query_normal,
+            OutputIt out_first, OutputIt out_last,
+            float& max_dist,
+            const Bounds& bounds
+    ) const
     {
-        auto distF = [](const Line* l, const Eigen::Vector3f& p)
-        {
-            Eigen::Vector3f v = p.cross(l->d) - l->m;
-            return v;
-        };
+        visited++;
 
+        std::array<float, 2> minimumDistances {};
+        std::array<Bounds, 2> childBounds {};
+
+        for(int i = 0; i < 2; ++i)
+        {
+            const auto& c = children[i];
+            if(c == nullptr)
+            {
+                minimumDistances[i] = std::numeric_limits<float>::infinity();
+            } else
+            {
+                childBounds[i] = bounds;
+
+                if(this->type == NodeType::moment)
+                {
+                    if(i == 0)
+                    {
+                        childBounds[i].m_end[this->bound_component_idx] = m_component;
+                    }else
+                    {
+                        childBounds[i].m_start[this->bound_component_idx] = m_component;
+                    }
+                } else
+                {
+                    if(i == 0)
+                    {
+                        childBounds[i].d_bound_1 = this->d_bound;
+                        childBounds[i].d_bound_2 = bounds.d_bound_1;
+                    }else
+                    {
+                        childBounds[i].d_bound_1 = bounds.d_bound_1;
+                        childBounds[i].d_bound_2 = -this->d_bound;
+                    }
+                }
+
+                Eigen::Vector3f min_m;
+                minimumDistances[i] = FindMinHitDist(query_point, query_normal, childBounds[i].d_bound_1, childBounds[i].d_bound_2, childBounds[i].m_start, childBounds[i].m_end, min_m);
+            }
+        }
+
+        // permutation = indices of children, from smallest to largest min dist
+        std::array<uint8_t, 2> permutation = {0, 1};
+        if(minimumDistances[0] > minimumDistances[1])
+        {
+            std::swap(permutation[0], permutation[1]);
+        }
+
+        unsigned int nbResultsFound = 0;
+        auto resultsListLength = std::distance(out_first, out_last);
+        for(uint8_t idx : permutation)
+        {
+            if(minimumDistances[idx] > max_dist+margin || children[idx] == nullptr) //max_dist_check
+            {
+                break;
+            }
+
+            auto nbResultsInNode = children[idx]->FindNearestHits(query_point, query_normal, out_first, out_last, max_dist, childBounds[idx]);
+            nbResultsFound = std::min(nbResultsFound + nbResultsInNode, resultsListLength);
+        }
+
+        //auto dist = (query_point.cross(line.d) - line.m).norm();
+        auto distF = [&query_normal](const Line* l, const Eigen::Vector3f& p){
+            Eigen::Vector3f l0 = (l->d.cross(l->m));
+            Eigen::Vector3f intersection = l0 + (l->d * (p - l0).dot(query_normal)/(l->d.dot(query_normal)));
+            Eigen::Vector3f vect = intersection - p;
+            return vect;
+        };
+        auto dist = distF(&line, query_point).norm();
+        if(dist < max_dist+margin) //max_dist_check
+        {
+            max_dist = insert(&line, out_first, out_last, query_point, distF);
+            nbResultsFound++;
+        }
+
+        return nbResultsFound;
+    }
+
+    template<class DistF, class OutputIt, typename = typename std::enable_if<std::is_same<const Line*, typename std::iterator_traits<OutputIt>::value_type>::value>::type>
+    static float insert(const Line* elem, OutputIt out_first, OutputIt out_end, const Eigen::Vector3f& query_point, const DistF& distF)
+    {
         auto it = std::lower_bound(out_first, out_end, elem, [&query_point, distF](const Line* c1, const Line* c2){
             auto dist1 = c1 == nullptr ? std::numeric_limits<float>::infinity() : distF(c1, query_point).squaredNorm();
             auto dist2 = c2 == nullptr ? std::numeric_limits<float>::infinity() : distF(c2, query_point).squaredNorm();
@@ -316,6 +414,56 @@ public:
             auto nbResultsInNode = sectors[idx].rootNode->FindNeighbours(
                     query_point, out_first, out_last, max_dist,
                     sectors[idx].bounds);
+            nbResultsFound = std::min(nbResultsFound + nbResultsInNode, resultsListLength);
+        }
+        return nbResultsFound;
+    }
+
+    template<class OutputIt, typename = typename std::enable_if<std::is_same<const Line*, typename std::iterator_traits<OutputIt>::value_type>::value>::type>
+    typename std::iterator_traits<OutputIt>::difference_type FindNearestHits(
+            const Eigen::Vector3f& query_point,
+            const Eigen::Vector3f& query_normal,
+            OutputIt out_first, OutputIt out_last,
+            float& max_dist
+    ) const
+    {
+        TreeNode::visited = 0;
+
+        std::array<float, 24> minimumDistances {};
+        for(int i = 0; i < minimumDistances.size(); ++i)
+        {
+            const TreeSector& sector = sectors[i];
+            if(sector.rootNode == nullptr)
+            {
+                minimumDistances[i] = std::numeric_limits<float>::infinity();
+            } else
+            {
+                Eigen::Vector3f min_m;
+                minimumDistances[i] = FindMinHitDist(query_point, query_normal, sector.bounds.d_bound_1, sector.bounds.d_bound_2, sector.bounds.m_start, sector.bounds.m_end, min_m);
+            }
+        }
+
+        std::array<uint8_t, 24> permutation {};
+        std::iota(permutation.begin(), permutation.end(), 0);
+        std::sort(permutation.begin(), permutation.end(), [it = minimumDistances.begin()](uint8_t a, uint8_t b) {
+            return *(it + a) < *(it + b);
+        });
+
+        //Search through sectors[idx].rootNode, ignoring sectors/bins with a mindist larger than searchRadius
+        //Insert each line found into the output list, keeping the list sorted by distance.
+        // Discard the last element, or don't insert if the new element is larger than all current results.
+        //Set searchradius to the largest distance in the results list
+        unsigned int nbResultsFound = 0;
+        auto resultsListLength = std::distance(out_first, out_last);
+        for(uint8_t idx : permutation)
+        {
+            if(minimumDistances[idx] > max_dist+margin || sectors[idx].rootNode == nullptr) //max_dist_check
+            {
+                break;
+            }
+
+            auto nbResultsInNode = sectors[idx].rootNode->FindNearestHits(
+                    query_point, query_normal, out_first, out_last, max_dist, sectors[idx].bounds);
             nbResultsFound = std::min(nbResultsFound + nbResultsInNode, resultsListLength);
         }
         return nbResultsFound;

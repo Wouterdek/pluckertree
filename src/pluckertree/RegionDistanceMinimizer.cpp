@@ -298,9 +298,89 @@ public:
     }
 };
 
+class FixedMomentMinHitDist
+{
+private:
+    using number_t = double;
+    using Vector3_t = Eigen::Vector3d;
+    using Vector2_t = Eigen::Vector2d;
+    using Matrix3_t = Eigen::Matrix3d;
+
+    Vector3_t q;
+    Vector3_t q_n;
+    Vector3_t h1;
+    Vector3_t h2;
+public:
+    FixedMomentMinHitDist(Vector3_t q, Vector3_t q_n, Vector3_t dirLowerBound, Vector3_t dirUpperBound)
+            : q(std::move(q)), q_n(std::move(q_n)), h1(std::move(dirLowerBound)), h2(std::move(dirUpperBound)) {}
+
+    double operator()(const Vector& x, Vector& grad)
+    {
+        // Careful, don't disturb the big pile of math!
+        number_t phi_k = x[0];
+        number_t theta_k = x[1];
+        number_t r_k = x[2];
+
+        // f(k)
+
+
+        Vector3_t k = spherical2cart(phi_k, theta_k, r_k);
+        Vector3_t kd = k.normalized();
+        Vector3_t qp = q - kd*(q.dot(kd));
+        Vector3_t qpd = qp.normalized();
+        auto u = (qp - q).norm();
+
+        auto sin_gamma = std::min(r_k/qp.norm(), (number_t)1.0f);
+        auto cos_gamma = std::sqrt(1 - sin_gamma * sin_gamma);
+
+        Vector3_t da = qpd * cos_gamma + kd.cross(qpd) * sin_gamma;
+        Vector3_t d_alpha;
+        auto da_dot_h1 = da.dot(h1);
+        auto da_dot_h2 = da.dot(h2);
+        if(da_dot_h1 >= 0 && da_dot_h2 >= 0)
+        {
+            d_alpha = da;
+        }else if(da_dot_h1 <= da_dot_h2)
+        {
+            Vector h1_cross_k = h1.cross(k);
+            d_alpha = std::copysign(1.0f, h2.dot(h1_cross_k)) * h1_cross_k.normalized();
+        }else
+        {
+            Vector h2_cross_k = h2.cross(k);
+            d_alpha = std::copysign(1.0f, h1.dot(h2_cross_k)) * h2_cross_k.normalized();
+        }
+
+        Vector3_t db = - qpd * cos_gamma + kd.cross(qpd) * sin_gamma;
+        Vector3_t d_beta;
+        auto db_dot_h1 = db.dot(h1);
+        auto db_dot_h2 = db.dot(h2);
+        if(db_dot_h1 >= 0 && db_dot_h2 >= 0)
+        {
+            d_beta = db;
+        }else if(db_dot_h1 < db_dot_h2)
+        {
+            Vector h1_cross_k = h1.cross(k);
+            d_beta = std::copysign(1.0f, h2.dot(h1_cross_k)) * h1_cross_k.normalized();
+        }else
+        {
+            Vector h2_cross_k = h2.cross(k);
+            d_beta = std::copysign(1.0f, h1.dot(h2_cross_k)) * h2_cross_k.normalized();
+        }
+
+        auto va = (qp.cross(d_alpha) - k).norm();
+        auto vb = (qp.cross(d_beta) - k).norm();
+        auto v = std::min(va, vb);
+
+        auto f = std::sqrt(u*u + v*v);
+
+        return f;
+    }
+};
+
 namespace pluckertree
 {
     int pluckertree::TreeNode::visited = 0;
+    std::vector<float> pluckertree::TreeNode::results;
 
     double FindMinDist(
             const Eigen::Vector3f& point,
@@ -312,7 +392,7 @@ namespace pluckertree
     )
     {
 
-        nlopt::opt opt(nlopt::LN_COBYLA, 3);
+        nlopt::opt opt(nlopt::LN_COBYLA, 3);//LN_NELDERMEAD, LN_SBPLX
 
         std::vector<double> lb(momentLowerBound.data(), momentLowerBound.data() + momentLowerBound.rows() * momentLowerBound.cols());
         opt.set_lower_bounds(lb);
@@ -326,6 +406,7 @@ namespace pluckertree
             Vector x_vect = Eigen::Vector3d {x[0], x[1], x[2]};
             Vector grad_vect = Eigen::Vector3d {0, 0, 0};
             auto result = (*fun)(x_vect, grad_vect);
+            pluckertree::TreeNode::results.push_back(result);
             return result;
         };
         opt.set_min_objective(obj_func, &fun);
@@ -371,6 +452,56 @@ namespace pluckertree
         std::cout << "f(x) = " << dist << std::endl;
 
         return dist;*/
+    }
+
+    double FindMinHitDist(
+            const Eigen::Vector3f& point,
+            const Eigen::Vector3f& point_normal,
+            const Eigen::Vector3f& dirLowerBound,
+            const Eigen::Vector3f& dirUpperBound,
+            const Eigen::Vector3f& momentLowerBound,
+            const Eigen::Vector3f& momentUpperBound,
+            Eigen::Vector3f& minimum
+    )
+    {
+
+        nlopt::opt opt(nlopt::LN_COBYLA, 3);//LN_NELDERMEAD, LN_SBPLX
+
+        std::vector<double> lb(momentLowerBound.data(), momentLowerBound.data() + momentLowerBound.rows() * momentLowerBound.cols());
+        opt.set_lower_bounds(lb);
+
+        std::vector<double> hb(momentUpperBound.data(), momentUpperBound.data() + momentUpperBound.rows() * momentUpperBound.cols());
+        opt.set_upper_bounds(hb);
+
+        FixedMomentMinHitDist fun(point.cast<double>(), point_normal.cast<double>(), dirLowerBound.cast<double>(), dirUpperBound.cast<double>());
+        auto obj_func = [](const std::vector<double> &x, std::vector<double> &grad, void* f_data) -> double {
+            FixedMomentMinHitDist* fun = reinterpret_cast<FixedMomentMinHitDist*>(f_data);
+            Vector x_vect = Eigen::Vector3d {x[0], x[1], x[2]};
+            Vector grad_vect = Eigen::Vector3d {0, 0, 0};
+            auto result = (*fun)(x_vect, grad_vect);
+            pluckertree::TreeNode::results.push_back(result);
+            return result;
+        };
+        opt.set_min_objective(obj_func, &fun);
+
+        opt.set_xtol_rel(1e-6);
+        opt.set_stopval(1e-6);
+
+        Vector vec = (momentLowerBound + (momentUpperBound - momentLowerBound)/2.0f).cast<double>();
+        std::vector<double> x(vec.data(), vec.data() + vec.rows() * vec.cols());
+
+        try
+        {
+            double minf;
+            nlopt::result result = opt.optimize(x, minf);
+
+            minimum = {x[0], x[1], x[2]};
+            return minf;
+        }
+        catch(std::exception &e) {
+            std::cout << "nlopt failed: " << e.what() << std::endl;
+            throw;
+        }
     }
 
     double FindMinDist(
