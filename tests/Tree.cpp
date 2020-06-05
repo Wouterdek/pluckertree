@@ -287,11 +287,15 @@ TEST(Tree, TestFindNearestHit_Random)
 
         if(*smallestLineIt != *result[0])
         {
-            std::cout << "progress: " ;
+            std::cout << "actual smallest: " ;
+            float smallest = 1E99;
             for(float curVal : TreeNode::results)
             {
-                std::cout << curVal << " ";
+                smallest = std::min(smallest, curVal);
+                //std::cout << curVal << " ";
             }
+            std::cout << smallest << " ";
+            std::cout << "returned smallest: " << TreeNode::results.back() << std::endl;
             std::cout << std::endl;
             std::cout << "sect: " ;
             for(int curI : idx)

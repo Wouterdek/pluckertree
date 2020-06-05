@@ -367,11 +367,46 @@ public:
             d_beta = std::copysign(1.0f, h1.dot(h2_cross_k)) * h2_cross_k.normalized();
         }
 
-        auto va = (qp.cross(d_alpha) - k).norm();
-        auto vb = (qp.cross(d_beta) - k).norm();
+        //Find intersection line of directionvector plane with query plane
+        Vector3_t kd_cross_qn = kd.cross(q_n);
+        auto kd_cross_qn_norm = kd_cross_qn.norm();
+        if(kd_cross_qn_norm < 1e-6) // All lines are parallel to the query plane, assume all miss.
+        {
+            return std::numeric_limits<double>::infinity();
+        }
+        Vector3_t isect_d = kd_cross_qn / kd_cross_qn_norm;
+        Vector3_t isect_k = kd * (q_n.dot(q)/kd_cross_qn_norm);
+
+        //Calculate intersection point of isect line with (d;k)
+        number_t va = std::numeric_limits<double>::infinity();
+        if(1 - std::abs(d_alpha.dot(isect_d)) > 1e-3)
+        {
+            Vector3_t isect_d_cross_d_alpha = isect_d.cross(d_alpha);
+            Vector3_t vp_a = 1.0/isect_d.cross(d_alpha).norm() * (isect_d * (k.dot(isect_d_cross_d_alpha)) - d_alpha * (isect_k.dot(isect_d_cross_d_alpha)));
+            va = (qp - vp_a).norm();
+        }
+
+        number_t vb = std::numeric_limits<double>::infinity();
+        if(1 - std::abs(d_beta.dot(isect_d)) > 1e-3)
+        {
+            Vector3_t isect_d_cross_d_beta = isect_d.cross(d_beta);
+            Vector3_t vp_b = 1.0/isect_d.cross(d_beta).norm() * (isect_d * (k.dot(isect_d_cross_d_beta)) - d_beta * (isect_k.dot(isect_d_cross_d_beta)));
+            vb = (qp - vp_b).norm();
+        }
+
         auto v = std::min(va, vb);
+        if(std::isinf(v))
+        {
+            return std::numeric_limits<double>::infinity();
+        }
 
         auto f = std::sqrt(u*u + v*v);
+
+        if(std::isnan(f))
+        {
+            return std::numeric_limits<double>::infinity();
+        }
+
 
         return f;
     }
