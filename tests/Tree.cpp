@@ -55,12 +55,20 @@ TEST(Tree, TestFindNeighbours)
 }
 
 //100, 100, 3224486327, 1750131217, nlopt roundoff-limited
+//100, 100, 4161057528, 2131736907, nlopt roundoff-limited
 //100, 100, 729685792, 519425711
 //100, 100, 3289432969, 3221991529
-//100, 100, 1534475676, 2371443842
+
+//100, 100, 240607058, 2271942277, nlopt roundoff-limited
+//100, 100, 952045152, 903079720, nlopt roundoff-limited
+//100, 100, 912149981, 2661143327, nlopt roundoff-limited
+//100, 100, 3429696701, 2776366842, nlopt roundoff-limited
+//100, 100, 702423470, 2130483690, nlopt roundoff-limited
+//100, 100, 1276366762, 752999194, nlopt roundoff-limited
+//100, 100, 3718611071, 759437136, nlopt roundoff-limited
 #include <chrono>
 
-TEST(Tree, DISABLED_TestFindNeighbours_1_Random)
+TEST(Tree, TestFindNeighbours_1_Random)
 {
     unsigned int line_count = 100;
     unsigned int query_count = 100;
@@ -111,7 +119,7 @@ TEST(Tree, DISABLED_TestFindNeighbours_1_Random)
         float result_dist = 1E99;
         TreeNode::results.clear();
         auto nbResultsFound = tree.FindNeighbours(query, result.begin(), result.end(), result_dist);
-        std::cout << "visited nodes: " << TreeNode::visited << std::endl;
+        //std::cout << "visited nodes: " << TreeNode::visited << std::endl;
         EXPECT_EQ(nbResultsFound, 1);
 
         auto smallestLineIt = std::min_element(lines.begin(), lines.end(), [query](const Line& l1, const Line& l2){
@@ -177,7 +185,7 @@ TEST(Tree, DISABLED_TestFindNeighbours_1_Random)
     }
 }
 
-TEST(Tree, TestFindNearestHit_Random)
+TEST(Tree, DISABLED_TestFindNearestHit_Random)
 {
     unsigned int line_count = 100;
     unsigned int query_count = 100;
@@ -233,7 +241,6 @@ TEST(Tree, TestFindNearestHit_Random)
         //auto t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
         //std::cout << "i: " << i << ", " << std::ctime(&t) << std::endl;
         float result_dist = 1E99;
-        TreeNode::results.clear();
         auto nbResultsFound = tree.FindNearestHits(query, query_normal, result.begin(), result.end(), result_dist);
         std::cout << "visited nodes: " << TreeNode::visited << std::endl;
         EXPECT_EQ(nbResultsFound, 1);

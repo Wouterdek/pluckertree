@@ -362,9 +362,9 @@ class Tree
 private:
 
 public:
-    std::array<TreeSector, 24> sectors;
+    std::array<TreeSector, 32> sectors;
 
-    explicit Tree(std::array<TreeSector, 24> sectors) : sectors(std::move(sectors)) {}
+    explicit Tree(std::array<TreeSector, 32> sectors) : sectors(std::move(sectors)) {}
 
     //void Add(const Line& line);
 	//bool Remove(const Line* line);
@@ -378,7 +378,7 @@ public:
     {
         TreeNode::visited = 0;
 
-        std::array<float, 24> minimumDistances {};
+        std::array<float, 32> minimumDistances {};
         for(int i = 0; i < minimumDistances.size(); ++i)
         {
             const TreeSector& sector = sectors[i];
@@ -392,7 +392,7 @@ public:
             }
         }
 
-        std::array<uint8_t, 24> permutation {};
+        std::array<uint8_t, 32> permutation {};
         std::iota(permutation.begin(), permutation.end(), 0);
         std::sort(permutation.begin(), permutation.end(), [it = minimumDistances.begin()](uint8_t a, uint8_t b) {
             return *(it + a) < *(it + b);
@@ -429,7 +429,7 @@ public:
     {
         TreeNode::visited = 0;
 
-        std::array<float, 24> minimumDistances {};
+        std::array<float, 32> minimumDistances {};
         for(int i = 0; i < minimumDistances.size(); ++i)
         {
             const TreeSector& sector = sectors[i];
@@ -443,7 +443,7 @@ public:
             }
         }
 
-        std::array<uint8_t, 24> permutation {};
+        std::array<uint8_t, 32> permutation {};
         std::iota(permutation.begin(), permutation.end(), 0);
         std::sort(permutation.begin(), permutation.end(), [it = minimumDistances.begin()](uint8_t a, uint8_t b) {
             return *(it + a) < *(it + b);
@@ -563,17 +563,25 @@ public:
         using Eigen::Vector3f;
         constexpr float max_dist = 150; //TODO
         constexpr float min_dist = 1e-3;
-        std::array<TreeSector, 24> sectors {
+        std::array<TreeSector, 32> sectors {
             // Top sector
-            TreeSector(Vector3f(1, 0, 0), Vector3f(0, 1, 0), Vector3f(-M_PI, 0, min_dist), Vector3f(M_PI, M_PI/4, max_dist)),
-            TreeSector(Vector3f(0, 1, 0), Vector3f(-1, 0, 0), Vector3f(-M_PI, 0, min_dist), Vector3f(M_PI, M_PI/4, max_dist)),
-            TreeSector(Vector3f(-1, 0, 0), Vector3f(0, -1, 0), Vector3f(-M_PI, 0, min_dist), Vector3f(M_PI, M_PI/4, max_dist)),
-            TreeSector(Vector3f(0, -1, 0), Vector3f(1, 0, 0), Vector3f(-M_PI, 0, min_dist), Vector3f(M_PI, M_PI/4, max_dist)),
+            TreeSector(Vector3f(1, 0, 0), Vector3f(0, 1, 0), Vector3f(-M_PI, 0, min_dist), Vector3f(0, M_PI/4, max_dist)),
+            TreeSector(Vector3f(0, 1, 0), Vector3f(-1, 0, 0), Vector3f(-M_PI, 0, min_dist), Vector3f(0, M_PI/4, max_dist)),
+            TreeSector(Vector3f(-1, 0, 0), Vector3f(0, -1, 0), Vector3f(-M_PI, 0, min_dist), Vector3f(0, M_PI/4, max_dist)),
+            TreeSector(Vector3f(0, -1, 0), Vector3f(1, 0, 0), Vector3f(-M_PI, 0, min_dist), Vector3f(0, M_PI/4, max_dist)),
+            TreeSector(Vector3f(1, 0, 0), Vector3f(0, 1, 0), Vector3f(0, 0, min_dist), Vector3f(M_PI, M_PI/4, max_dist)),
+            TreeSector(Vector3f(0, 1, 0), Vector3f(-1, 0, 0), Vector3f(0, 0, min_dist), Vector3f(M_PI, M_PI/4, max_dist)),
+            TreeSector(Vector3f(-1, 0, 0), Vector3f(0, -1, 0), Vector3f(0, 0, min_dist), Vector3f(M_PI, M_PI/4, max_dist)),
+            TreeSector(Vector3f(0, -1, 0), Vector3f(1, 0, 0), Vector3f(0, 0, min_dist), Vector3f(M_PI, M_PI/4, max_dist)),
             // Bottom sector
-            TreeSector(Vector3f(1, 0, 0), Vector3f(0, 1, 0), Vector3f(-M_PI, 3*M_PI/4, min_dist), Vector3f(M_PI, M_PI, max_dist)),
-            TreeSector(Vector3f(0, 1, 0), Vector3f(-1, 0, 0), Vector3f(-M_PI, 3*M_PI/4, min_dist), Vector3f(M_PI, M_PI, max_dist)),
-            TreeSector(Vector3f(-1, 0, 0), Vector3f(0, -1, 0), Vector3f(-M_PI, 3*M_PI/4, min_dist), Vector3f(M_PI, M_PI, max_dist)),
-            TreeSector(Vector3f(0, -1, 0), Vector3f(1, 0, 0), Vector3f(-M_PI, 3*M_PI/4, min_dist), Vector3f(M_PI, M_PI, max_dist)),
+            TreeSector(Vector3f(1, 0, 0), Vector3f(0, 1, 0), Vector3f(-M_PI, 3*M_PI/4, min_dist), Vector3f(0, M_PI, max_dist)),
+            TreeSector(Vector3f(0, 1, 0), Vector3f(-1, 0, 0), Vector3f(-M_PI, 3*M_PI/4, min_dist), Vector3f(0, M_PI, max_dist)),
+            TreeSector(Vector3f(-1, 0, 0), Vector3f(0, -1, 0), Vector3f(-M_PI, 3*M_PI/4, min_dist), Vector3f(0, M_PI, max_dist)),
+            TreeSector(Vector3f(0, -1, 0), Vector3f(1, 0, 0), Vector3f(-M_PI, 3*M_PI/4, min_dist), Vector3f(0, M_PI, max_dist)),
+            TreeSector(Vector3f(1, 0, 0), Vector3f(0, 1, 0), Vector3f(0, 3*M_PI/4, min_dist), Vector3f(M_PI, M_PI, max_dist)),
+            TreeSector(Vector3f(0, 1, 0), Vector3f(-1, 0, 0), Vector3f(0, 3*M_PI/4, min_dist), Vector3f(M_PI, M_PI, max_dist)),
+            TreeSector(Vector3f(-1, 0, 0), Vector3f(0, -1, 0), Vector3f(0, 3*M_PI/4, min_dist), Vector3f(M_PI, M_PI, max_dist)),
+            TreeSector(Vector3f(0, -1, 0), Vector3f(1, 0, 0), Vector3f(0, 3*M_PI/4, min_dist), Vector3f(M_PI, M_PI, max_dist)),
             // -X -Y sector
             TreeSector(Vector3f(0, 0, 1), Vector3f(1, -1, 0).normalized(), Vector3f(-M_PI, M_PI/4, min_dist), Vector3f(-M_PI/2, 3*M_PI/4, max_dist)),
             TreeSector(Vector3f(1, -1, 0).normalized(), Vector3f(0, 0, -1), Vector3f(-M_PI, M_PI/4, min_dist), Vector3f(-M_PI/2, 3*M_PI/4, max_dist)),
@@ -597,7 +605,7 @@ public:
         };
 
         // Sort lines into sectors
-        std::array<LineIt, 24> line_sector_ends;
+        std::array<LineIt, 32> line_sector_ends;
         {
             LineIt it_begin = lines_first;
             int idx = 0;

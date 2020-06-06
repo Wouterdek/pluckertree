@@ -426,6 +426,7 @@ namespace pluckertree
             Eigen::Vector3f& minimum
     )
     {
+        TreeNode::results.clear();
 
         nlopt::opt opt(nlopt::LN_COBYLA, 3);//LN_NELDERMEAD, LN_SBPLX
 
@@ -499,6 +500,7 @@ namespace pluckertree
             Eigen::Vector3f& minimum
     )
     {
+        TreeNode::results.clear();
 
         nlopt::opt opt(nlopt::LN_COBYLA, 3);//LN_NELDERMEAD, LN_SBPLX
 
