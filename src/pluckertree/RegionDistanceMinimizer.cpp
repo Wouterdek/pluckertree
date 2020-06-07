@@ -323,17 +323,26 @@ public:
 
         // f(k)
 
-
         Vector3_t k = spherical2cart(phi_k, theta_k, r_k);
         Vector3_t kd = k.normalized();
-        Vector3_t qp = q - kd*(q.dot(kd));
-        Vector3_t qpd = qp.normalized();
-        auto u = (qp - q).norm();
 
-        auto sin_gamma = std::min(r_k/qp.norm(), (number_t)1.0f);
+        //Find intersection line of directionvector plane with query plane
+        Vector3_t kd_cross_qn = kd.cross(q_n);
+        auto kd_cross_qn_norm = kd_cross_qn.norm();
+        if(kd_cross_qn_norm < 1e-6) // All lines are parallel to the query plane, assume all miss.
+        {
+            return std::numeric_limits<double>::infinity();
+        }
+        Vector3_t isect_d = kd_cross_qn / kd_cross_qn_norm;
+        Vector3_t isect_k = kd * (q_n.dot(q)/kd_cross_qn_norm);
+        Vector3_t isect_p = isect_d.cross(isect_k);
+        Vector3_t qpl = isect_p + isect_d * isect_d.dot(q - isect_p);
+        Vector3_t qpld = qpl.normalized();
+
+        auto sin_gamma = std::min(r_k/qpl.norm(), (number_t)1.0f);
         auto cos_gamma = std::sqrt(1 - sin_gamma * sin_gamma);
 
-        Vector3_t da = qpd * cos_gamma + kd.cross(qpd) * sin_gamma;
+        Vector3_t da = qpld * cos_gamma + kd.cross(qpld) * sin_gamma;
         Vector3_t d_alpha;
         auto da_dot_h1 = da.dot(h1);
         auto da_dot_h2 = da.dot(h2);
@@ -350,7 +359,7 @@ public:
             d_alpha = std::copysign(1.0f, h1.dot(h2_cross_k)) * h2_cross_k.normalized();
         }
 
-        Vector3_t db = - qpd * cos_gamma + kd.cross(qpd) * sin_gamma;
+        Vector3_t db = - qpld * cos_gamma + kd.cross(qpld) * sin_gamma;
         Vector3_t d_beta;
         auto db_dot_h1 = db.dot(h1);
         auto db_dot_h2 = db.dot(h2);
@@ -367,31 +376,21 @@ public:
             d_beta = std::copysign(1.0f, h1.dot(h2_cross_k)) * h2_cross_k.normalized();
         }
 
-        //Find intersection line of directionvector plane with query plane
-        Vector3_t kd_cross_qn = kd.cross(q_n);
-        auto kd_cross_qn_norm = kd_cross_qn.norm();
-        if(kd_cross_qn_norm < 1e-6) // All lines are parallel to the query plane, assume all miss.
-        {
-            return std::numeric_limits<double>::infinity();
-        }
-        Vector3_t isect_d = kd_cross_qn / kd_cross_qn_norm;
-        Vector3_t isect_k = kd * (q_n.dot(q)/kd_cross_qn_norm);
-
         //Calculate intersection point of isect line with (d;k)
         number_t va = std::numeric_limits<double>::infinity();
         if(1 - std::abs(d_alpha.dot(isect_d)) > 1e-3)
         {
             Vector3_t isect_d_cross_d_alpha = isect_d.cross(d_alpha);
-            Vector3_t vp_a = 1.0/isect_d.cross(d_alpha).norm() * (isect_d * (k.dot(isect_d_cross_d_alpha)) - d_alpha * (isect_k.dot(isect_d_cross_d_alpha)));
-            va = (qp - vp_a).norm();
+            Vector3_t vp_a = (1.0/isect_d.cross(d_alpha).squaredNorm()) * (isect_d * (k.dot(isect_d_cross_d_alpha)) - d_alpha * (isect_k.dot(isect_d_cross_d_alpha)));
+            va = (q - vp_a).norm();
         }
 
         number_t vb = std::numeric_limits<double>::infinity();
         if(1 - std::abs(d_beta.dot(isect_d)) > 1e-3)
         {
             Vector3_t isect_d_cross_d_beta = isect_d.cross(d_beta);
-            Vector3_t vp_b = 1.0/isect_d.cross(d_beta).norm() * (isect_d * (k.dot(isect_d_cross_d_beta)) - d_beta * (isect_k.dot(isect_d_cross_d_beta)));
-            vb = (qp - vp_b).norm();
+            Vector3_t vp_b = (1.0/isect_d.cross(d_beta).squaredNorm()) * (isect_d * (k.dot(isect_d_cross_d_beta)) - d_beta * (isect_k.dot(isect_d_cross_d_beta)));
+            vb = (q - vp_b).norm();
         }
 
         auto v = std::min(va, vb);
@@ -400,15 +399,7 @@ public:
             return std::numeric_limits<double>::infinity();
         }
 
-        auto f = std::sqrt(u*u + v*v);
-
-        if(std::isnan(f))
-        {
-            return std::numeric_limits<double>::infinity();
-        }
-
-
-        return f;
+        return v;
     }
 };
 

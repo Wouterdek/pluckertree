@@ -84,3 +84,19 @@ TEST(RegionDistanceMinimizer, Test3)
     std::cout << "min: " << min.transpose() << std::endl;
     EXPECT_LT(minDist, 10);
 }
+
+TEST(RegionDistanceMinimizer, Test5)
+{
+    Eigen::Vector3f dlb = Eigen::Vector3f(0,0,-1);
+    Eigen::Vector3f dub = Eigen::Vector3f(-std::sqrt(2)/2.0, std::sqrt(2)/2, 0);
+    Eigen::Vector3f mlb(-1.670233346304141, 1.3752921333858823, 32.70795644289806);
+    Eigen::Vector3f mub(-1.670233346304141, 1.3752921333858823, 32.70795644289806);
+
+    Eigen::Vector3f q(20.1563377, 1.75047028, 48.4263535);
+    Eigen::Vector3f q_normal(0.403123677, 0.569172323, 0.716612995);
+
+    Eigen::Vector3f min;
+    auto minDist = FindMinHitDist(q, q_normal, dlb, dub, mlb, mub, min);
+    std::cout << "min: " << min.transpose() << std::endl;
+    EXPECT_LT(minDist, 6.45);
+}
