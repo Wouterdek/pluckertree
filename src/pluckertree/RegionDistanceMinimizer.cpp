@@ -557,8 +557,9 @@ struct GridPoint
     float dist;
 };
 
-std::vector<GridPoint> CalculateGrid(
+/*std::vector<GridPoint> CalculateGrid(
         const Eigen::Vector3f& point,
+        const Eigen::Vector3f& query_point,
         const Eigen::Vector3f& dirLowerBound,
         const Eigen::Vector3f& dirUpperBound,
         float x_start,
@@ -570,7 +571,7 @@ std::vector<GridPoint> CalculateGrid(
         float resolution
 )
 {
-    FixedMomentMinDist f(point.cast<double>(), dirLowerBound.cast<double>(), dirUpperBound.cast<double>());
+    FixedMomentMinHitDist f(point.cast<double>(), query_point.cast<double>(), dirLowerBound.cast<double>(), dirUpperBound.cast<double>());
 
     auto x_steps = int((x_end - x_start) / resolution);
     auto y_steps = int((y_end - y_start) / resolution);
@@ -580,6 +581,8 @@ std::vector<GridPoint> CalculateGrid(
 
     for(int x_i = 0; x_i < x_steps; x_i++)
     {
+        std::cout << ((float)x_i/(float)x_steps)*100.0f << "%\r";
+        std::cout.flush();
         auto x = x_start + resolution*x_i;
         for(int y_i = 0; y_i < y_steps; y_i++)
         {
@@ -588,35 +591,77 @@ std::vector<GridPoint> CalculateGrid(
             {
                 auto z = z_start + resolution*z_i;
 
-                Vector vect = Eigen::Vector3d(x, y, z);
+                Vector vect = cart2spherical(Eigen::Vector3d(x, y, z));
                 Vector grad;
                 auto dist = f(vect, grad);
 
                 auto& curPoint = points[(x_i * y_steps * z_steps) + (y_i * z_steps) + z_i];
                 curPoint.pos = Eigen::Vector3f(x, y, z);
                 curPoint.dist = dist;
-                curPoint.grad = grad.cast<float>();
+                //curPoint.grad = grad.cast<float>();
             }
         }
     }
+    std::cout << std::endl;
+
+    return points;
+}*/
+
+std::vector<GridPoint> CalculateBallSlice(
+        const Eigen::Vector3f& point,
+        const Eigen::Vector3f& query_point,
+        const Eigen::Vector3f& dirLowerBound,
+        const Eigen::Vector3f& dirUpperBound,
+        const Eigen::Vector3f& mlb,
+        const Eigen::Vector3f& mub,
+        float resolution
+)
+{
+    FixedMomentMinHitDist f(point.cast<double>(), query_point.cast<double>(), dirLowerBound.cast<double>(), dirUpperBound.cast<double>());
+
+    Eigen::Vector3f stepSize = (mub - mlb) / resolution;
+
+    std::vector<GridPoint> points(resolution * resolution * resolution);
+
+    for(int x_i = 0; x_i < resolution; x_i++)
+    {
+        std::cout << ((float)x_i/(float)resolution)*100.0f << "%\r";
+        std::cout.flush();
+        auto x = mlb.x() + stepSize.x()*x_i;
+        for(int y_i = 0; y_i < resolution; y_i++)
+        {
+            auto y = mlb.y() + stepSize.y()*y_i;
+            for(int z_i = 0; z_i < resolution; z_i++)
+            {
+                auto z = mlb.z() + stepSize.z()*z_i;
+
+                Vector vect = Eigen::Vector3d(x, y, z);
+                Vector grad;
+                auto dist = f(vect, grad);
+
+                auto& curPoint = points[(x_i * resolution * resolution) + (y_i * resolution) + z_i];
+                curPoint.pos = spherical2cart(x, y, z);
+                curPoint.dist = dist;
+                //curPoint.grad = grad.cast<float>();
+            }
+        }
+    }
+    std::cout << std::endl;
 
     return points;
 }
 
-
 void show_me_the_grid()
 {
-    /*const Eigen::Vector3f point(1, 0, 0);
-    Eigen::Vector3f dirLowerBound(-M_PI, 0);
-    Eigen::Vector3f dirUpperBound(M_PI, M_PI);
-    float x_start = -1;
-    float x_end = 1;
-    float y_start = -1;
-    float y_end = 1;
-    float z_start = -1;
-    float z_end = 1;
-    float resolution = 0.1;
-    auto data = CalculateGrid(point, dirLowerBound, dirUpperBound, x_start, x_end, y_start, y_end, z_start, z_end, resolution);
+    Eigen::Vector3f dlb = Eigen::Vector3f(0,0,-1);
+    Eigen::Vector3f dub = Eigen::Vector3f(-std::sqrt(2)/2.0, std::sqrt(2)/2, 0);
+    Eigen::Vector3f mlb(-M_PI, 0.785398185, 1);
+    Eigen::Vector3f mub(-M_PI/2, 2.3561945, 80);
+    Eigen::Vector3f q(25.216011, 86.2393799, 64.2581253);
+    Eigen::Vector3f q_normal(0.742901862, 0.662636876, 0.0949169919);
+
+    float resolution = 100;
+    auto data = CalculateBallSlice(q, q_normal, dlb, dub, mlb, mub, resolution);
 
     std::fstream myfile;
     myfile = std::fstream("/home/wouter/Desktop/pluckerdata", std::ios::out | std::ios::binary);
@@ -633,7 +678,7 @@ void show_me_the_grid()
         myfile.write(reinterpret_cast<const char*>(&entry.grad.z()), sizeof(float));
         myfile.write(reinterpret_cast<const char*>(&entry.dist), sizeof(float));
     }
-    myfile.close();*/
+    myfile.close();
 }
 
 /////
