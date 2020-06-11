@@ -46,7 +46,12 @@ double FindMinDist(
         const Eigen::Vector3f& moment
 );
 
-void show_me_the_grid();
+void show_me_the_grid(std::string& file,
+                      const Eigen::Vector3f& dlb,
+                      const Eigen::Vector3f& dub,
+                      const Eigen::Vector3f& mlb,
+                      const Eigen::Vector3f& mub,
+                      const Eigen::Vector3f& q);
 
 class Line
 {
@@ -84,6 +89,7 @@ public:
     }
 };
 
+template<class Content, Line Content::*line_member>
 class TreeNode;
 
 struct Bounds
@@ -97,13 +103,27 @@ struct Bounds
     : d_bound_1(std::move(d_bound_1)), d_bound_2(std::move(d_bound_2)), m_start(std::move(m_start)), m_end(std::move(m_end)) {}
 
     Bounds() = default;
+
+    void Clip(Eigen::Vector3f& moment) const
+    {
+        // Technically, we should account for -PI = PI in azimuth, but due to choice of sectors this method is fine.
+        moment.x() = std::max(m_start.x(), std::min(m_end.x(), moment.x()));
+        moment.y() = std::max(m_start.y(), std::min(m_end.y(), moment.y()));
+        moment.z() = std::max(m_start.z(), std::min(m_end.z(), moment.z()));
+    }
+
+    bool ContainsMoment(const Eigen::Vector3f& moment /*spher coords*/) const
+    {
+        return Eigen::AlignedBox<float, 3>(m_start, m_end).contains(moment);
+    }
 };
 
+template<class Content, Line Content::*line_member>
 class TreeSector
 {
 public:
     Bounds bounds;
-    std::unique_ptr<TreeNode> rootNode;
+    std::unique_ptr<TreeNode<Content, line_member>> rootNode;
 
     TreeSector(Eigen::Vector3f d_bound_1, Eigen::Vector3f d_bound_2, Eigen::Vector3f m_start, Eigen::Vector3f m_end)
         : bounds(std::move(d_bound_1), std::move(d_bound_2), std::move(m_start), std::move(m_end)) {}
@@ -137,11 +157,12 @@ void iter_insert(Iterator position, Iterator end, const Value& val)
 
 constexpr float margin = 0;
 
+template<class Content, Line Content::*line_member>
 class TreeNode
 {
 public:
-    std::array<std::unique_ptr<TreeNode>, 2> children;
-    Line line;
+    std::array<std::unique_ptr<TreeNode<Content, line_member>>, 2> children;
+    Content content;
     Eigen::Vector3f d_bound; //carthesian
     float m_component; //spherical
     NodeType type : 1;
@@ -150,28 +171,26 @@ public:
     //uint8_t pad1 : 6;
     //uint8_t pad2[7];
 
-    static int visited; //TODO: remove
-    static std::vector<float> results;
+    TreeNode(uint8_t bound_component_idx, float m_component, Content content)
+        : type(NodeType::moment), bound_component_idx(bound_component_idx), m_component(m_component), content(std::move(content)), children() {}
 
-    TreeNode(uint8_t bound_component_idx, float m_component, Line line)
-        : type(NodeType::moment), bound_component_idx(bound_component_idx), m_component(m_component), line(std::move(line)), children() {}
-
-    TreeNode(Eigen::Vector3f d_bound, Line line)
-            : type(NodeType::direction), d_bound(std::move(d_bound)), line(std::move(line)), children() {}
+    TreeNode(Eigen::Vector3f d_bound, Content content)
+            : type(NodeType::direction), d_bound(std::move(d_bound)), content(std::move(content)), children() {}
 
 
-    template<class OutputIt, typename = typename std::enable_if<std::is_same<const Line*, typename std::iterator_traits<OutputIt>::value_type>::value>::type>
+    template<class OutputIt, typename = typename std::enable_if<std::is_same<const Content*, typename std::iterator_traits<OutputIt>::value_type>::value>::type>
     typename std::iterator_traits<OutputIt>::difference_type FindNeighbours(
             const Eigen::Vector3f& query_point,
             OutputIt out_first, OutputIt out_last,
             float& max_dist,
-            const Bounds& bounds
+            const Bounds& bounds,
+            const Eigen::Vector3f& moment_min_hint,
+            float moment_min_hint_dist
     ) const
     {
-        visited++;
-
         std::array<float, 2> minimumDistances {};
         std::array<Bounds, 2> childBounds {};
+        std::array<Eigen::Vector3f, 2> childMomentMinima {};
 
         for(int i = 0; i < 2; ++i)
         {
@@ -187,10 +206,17 @@ public:
                 {
                     if(i == 0)
                     {
-                        childBounds[i].m_end[this->bound_component_idx] = m_component;
+                        childBounds[0].m_end[this->bound_component_idx] = m_component;
                     }else
                     {
-                        childBounds[i].m_start[this->bound_component_idx] = m_component;
+                        childBounds[1].m_start[this->bound_component_idx] = m_component;
+                    }
+
+                    if(childBounds[i].ContainsMoment(moment_min_hint)) //TODO: test
+                    {
+                        childMomentMinima[i] = moment_min_hint;
+                        minimumDistances[i] = moment_min_hint_dist;
+                        continue;
                     }
                 } else
                 {
@@ -205,8 +231,9 @@ public:
                     }
                 }
 
-                Eigen::Vector3f min_m;
-                minimumDistances[i] = FindMinDist(query_point, childBounds[i].d_bound_1, childBounds[i].d_bound_2, childBounds[i].m_start, childBounds[i].m_end, min_m);
+                childMomentMinima[i] = moment_min_hint;
+                childBounds[i].Clip(childMomentMinima[i]);
+                minimumDistances[i] = FindMinDist(query_point, childBounds[i].d_bound_1, childBounds[i].d_bound_2, childBounds[i].m_start, childBounds[i].m_end, childMomentMinima[i]);
             }
         }
 
@@ -226,26 +253,28 @@ public:
                 break;
             }
 
-            auto nbResultsInNode = children[idx]->FindNeighbours(query_point, out_first, out_last, max_dist, childBounds[idx]);
+            auto nbResultsInNode = children[idx]->FindNeighbours(query_point, out_first, out_last, max_dist, childBounds[idx], childMomentMinima[idx], minimumDistances[idx]);
             nbResultsFound = std::min(nbResultsFound + nbResultsInNode, resultsListLength);
         }
 
-        auto distF = [](const Line* l, const Eigen::Vector3f& p)
+        auto distF = [](const Content* c, const Eigen::Vector3f& p)
         {
-            Eigen::Vector3f v = p.cross(l->d) - l->m;
+            const auto& l = c->*line_member;
+            Eigen::Vector3f v = p.cross(l.d) - l.m;
             return v;
         };
-        auto dist = distF(&line, query_point).norm();
+
+        auto dist = distF(&content, query_point).norm();
         if(dist < max_dist+margin) //max_dist_check
         {
-            max_dist = insert(&line, out_first, out_last, query_point, distF);
+            max_dist = insert(&content, out_first, out_last, query_point, distF);
             nbResultsFound++;
         }
 
         return nbResultsFound;
     }
 
-    template<class OutputIt, typename = typename std::enable_if<std::is_same<const Line*, typename std::iterator_traits<OutputIt>::value_type>::value>::type>
+    template<class OutputIt, typename = typename std::enable_if<std::is_same<const Content*, typename std::iterator_traits<OutputIt>::value_type>::value>::type>
     typename std::iterator_traits<OutputIt>::difference_type FindNearestHits(
             const Eigen::Vector3f& query_point,
             const Eigen::Vector3f& query_normal,
@@ -254,8 +283,6 @@ public:
             const Bounds& bounds
     ) const
     {
-        visited++;
-
         std::array<float, 2> minimumDistances {};
         std::array<Bounds, 2> childBounds {};
 
@@ -317,26 +344,27 @@ public:
         }
 
         //auto dist = (query_point.cross(line.d) - line.m).norm();
-        auto distF = [&query_normal](const Line* l, const Eigen::Vector3f& p){
-            Eigen::Vector3f l0 = (l->d.cross(l->m));
-            Eigen::Vector3f intersection = l0 + (l->d * (p - l0).dot(query_normal)/(l->d.dot(query_normal)));
+        auto distF = [&query_normal](const Content* c, const Eigen::Vector3f& p){
+            const auto& l = c->*line_member;
+            Eigen::Vector3f l0 = (l.d.cross(l.m));
+            Eigen::Vector3f intersection = l0 + (l.d * (p - l0).dot(query_normal)/(l.d.dot(query_normal)));
             Eigen::Vector3f vect = intersection - p;
             return vect;
         };
-        auto dist = distF(&line, query_point).norm();
+        auto dist = distF(&content, query_point).norm();
         if(dist < max_dist+margin) //max_dist_check
         {
-            max_dist = insert(&line, out_first, out_last, query_point, distF);
+            max_dist = insert(&content, out_first, out_last, query_point, distF);
             nbResultsFound++;
         }
 
         return nbResultsFound;
     }
 
-    template<class DistF, class OutputIt, typename = typename std::enable_if<std::is_same<const Line*, typename std::iterator_traits<OutputIt>::value_type>::value>::type>
-    static float insert(const Line* elem, OutputIt out_first, OutputIt out_end, const Eigen::Vector3f& query_point, const DistF& distF)
+    template<class DistF, class OutputIt, typename = typename std::enable_if<std::is_same<const Content*, typename std::iterator_traits<OutputIt>::value_type>::value>::type>
+    static float insert(const Content* elem, OutputIt out_first, OutputIt out_end, const Eigen::Vector3f& query_point, const DistF& distF)
     {
-        auto it = std::lower_bound(out_first, out_end, elem, [&query_point, distF](const Line* c1, const Line* c2){
+        auto it = std::lower_bound(out_first, out_end, elem, [&query_point, distF](const Content* c1, const Content* c2){
             auto dist1 = c1 == nullptr ? std::numeric_limits<float>::infinity() : distF(c1, query_point).squaredNorm();
             auto dist2 = c2 == nullptr ? std::numeric_limits<float>::infinity() : distF(c2, query_point).squaredNorm();
             return dist1 < dist2;
@@ -357,38 +385,42 @@ public:
     }
 };
 
+template<typename Content, Line Content::*line_member>
 class Tree
 {
 private:
+    size_t _size;
 
 public:
-    std::array<TreeSector, 32> sectors;
+    std::array<TreeSector<Content, line_member>, 32> sectors;
 
-    explicit Tree(std::array<TreeSector, 32> sectors) : sectors(std::move(sectors)) {}
+
+    explicit Tree(size_t size, std::array<TreeSector<Content, line_member>, 32> sectors) : _size(size), sectors(std::move(sectors)) {}
+
+    size_t size() const { return _size; };
 
     //void Add(const Line& line);
 	//bool Remove(const Line* line);
 
-	template<class OutputIt, typename = typename std::enable_if<std::is_same<const Line*, typename std::iterator_traits<OutputIt>::value_type>::value>::type>
+	template<class OutputIt, typename = typename std::enable_if<std::is_same<const Content*, typename std::iterator_traits<OutputIt>::value_type>::value>::type>
     typename std::iterator_traits<OutputIt>::difference_type FindNeighbours(
     	const Eigen::Vector3f& query_point,
 		OutputIt out_first, OutputIt out_last, 
     	float& max_dist
 	) const
     {
-        TreeNode::visited = 0;
-
         std::array<float, 32> minimumDistances {};
+        std::array<Eigen::Vector3f, 32> moment_min_hints {};
         for(int i = 0; i < minimumDistances.size(); ++i)
         {
-            const TreeSector& sector = sectors[i];
+            const auto& sector = sectors[i];
             if(sector.rootNode == nullptr)
             {
                 minimumDistances[i] = std::numeric_limits<float>::infinity();
             } else
             {
-                Eigen::Vector3f min_m;
-                minimumDistances[i] = FindMinDist(query_point, sector.bounds.d_bound_1, sector.bounds.d_bound_2, sector.bounds.m_start, sector.bounds.m_end, min_m);
+                moment_min_hints[i] = sector.bounds.m_start + (sector.bounds.m_end - sector.bounds.m_start)/2;
+                minimumDistances[i] = FindMinDist(query_point, sector.bounds.d_bound_1, sector.bounds.d_bound_2, sector.bounds.m_start, sector.bounds.m_end, moment_min_hints[i]);
             }
         }
 
@@ -411,15 +443,15 @@ public:
                 break;
             }
 
+            const auto& curBounds = sectors[idx].bounds;
             auto nbResultsInNode = sectors[idx].rootNode->FindNeighbours(
-                    query_point, out_first, out_last, max_dist,
-                    sectors[idx].bounds);
+                    query_point, out_first, out_last, max_dist, curBounds, moment_min_hints[idx], minimumDistances[idx]);
             nbResultsFound = std::min(nbResultsFound + nbResultsInNode, resultsListLength);
         }
         return nbResultsFound;
     }
 
-    template<class OutputIt, typename = typename std::enable_if<std::is_same<const Line*, typename std::iterator_traits<OutputIt>::value_type>::value>::type>
+    template<class OutputIt, typename = typename std::enable_if<std::is_same<const Content*, typename std::iterator_traits<OutputIt>::value_type>::value>::type>
     typename std::iterator_traits<OutputIt>::difference_type FindNearestHits(
             const Eigen::Vector3f& query_point,
             const Eigen::Vector3f& query_normal,
@@ -427,12 +459,10 @@ public:
             float& max_dist
     ) const
     {
-        TreeNode::visited = 0;
-
         std::array<float, 32> minimumDistances {};
         for(int i = 0; i < minimumDistances.size(); ++i)
         {
-            const TreeSector& sector = sectors[i];
+            const auto& sector = sectors[i];
             if(sector.rootNode == nullptr)
             {
                 minimumDistances[i] = std::numeric_limits<float>::infinity();
@@ -471,11 +501,15 @@ public:
 };
 
 
+template<class Content, Line Content::*line_member>
 class TreeBuilder
 {
+    using Node = TreeNode<Content, line_member>;
+    using Sector = TreeSector<Content, line_member>;
+
 private:
-    template<class LineIt, typename = typename std::enable_if<std::is_same<Line, typename std::iterator_traits<LineIt>::value_type>::value>::type>
-    static std::unique_ptr<TreeNode> BuildNode(LineIt lines_begin, LineIt lines_end, const Bounds& bounds, int level)
+    template<class LineIt, typename = typename std::enable_if<std::is_same<Content, typename std::iterator_traits<LineIt>::value_type>::value>::type>
+    static std::unique_ptr<Node> BuildNode(LineIt lines_begin, LineIt lines_end, const Bounds& bounds, int level)
     {
         auto lineCount = std::distance(lines_begin, lines_end);
         if(lineCount == 0)
@@ -484,7 +518,7 @@ private:
         }
 
         // Find axis with largest variance and split in 2 there
-        std::unique_ptr<TreeNode> node;
+        std::unique_ptr<Node> node;
         //NodeType type;
         uint8_t splitComponent = 0;
         LineIt pivot;
@@ -492,7 +526,7 @@ private:
         Bounds subBounds2 = bounds;
 
         // Calculate max moment variance
-        Eigen::Array3f mVarianceVect = calc_vec3_variance(lines_begin, lines_end, [](const Line& l){return cart2spherical(l.m); });
+        Eigen::Array3f mVarianceVect = calc_vec3_variance(lines_begin, lines_end, [](const Content& c){return cart2spherical((c.*line_member).m); });
         auto mVariance = mVarianceVect.maxCoeff(&splitComponent);
         auto mBoundCompDist = (bounds.m_end[splitComponent] - bounds.m_start[splitComponent]);
         auto mMaxPossibleVariance = (mBoundCompDist * mBoundCompDist) / 4;
@@ -539,14 +573,17 @@ private:
             node = std::make_unique<TreeNode>(dir_bound, *pivot);
         } else*/
         {
-            std::sort(lines_begin, lines_end, [splitComponent](const Line& l1, const Line& l2){
+            std::sort(lines_begin, lines_end, [splitComponent](const Content& c1, const Content& c2){
+                const auto& l1 = c1.*line_member;
+                const auto& l2 = c2.*line_member;
                 return cart2spherical(l1.m)[splitComponent] < cart2spherical(l2.m)[splitComponent];
             });
             pivot = lines_begin + (lines_end - lines_begin)/2;
-            subBounds1.m_end[splitComponent] = (*pivot).m[splitComponent];
-            subBounds2.m_start[splitComponent] = (*pivot).m[splitComponent];
+            const auto& pivotLine = (*pivot).*line_member;
+            subBounds1.m_end[splitComponent] = pivotLine.m[splitComponent];
+            subBounds2.m_start[splitComponent] = pivotLine.m[splitComponent];
 
-            node = std::make_unique<TreeNode>(splitComponent, cart2spherical((*pivot).m)[splitComponent], *pivot);
+            node = std::make_unique<Node>(splitComponent, cart2spherical(pivotLine.m)[splitComponent], *pivot);
         }
 
         // Store iterators and bounds and then recurse
@@ -556,65 +593,67 @@ private:
     }
 
 public:
-    template<class LineIt, typename = typename std::enable_if<std::is_same<Line, typename std::iterator_traits<LineIt>::value_type>::value>::type>
-    static Tree Build(LineIt lines_first, LineIt lines_last)
+    template<class LineIt, typename = typename std::enable_if<std::is_same<Content, typename std::iterator_traits<LineIt>::value_type>::value>::type>
+    static Tree<Content, line_member> Build(LineIt lines_first, LineIt lines_last)
     {
         // Create sectors
         using Eigen::Vector3f;
         constexpr float max_dist = 150; //TODO
         constexpr float min_dist = 1e-3;
-        std::array<TreeSector, 32> sectors {
+        std::array<Sector, 32> sectors {
             // Top sector
-            TreeSector(Vector3f(1, 0, 0), Vector3f(0, 1, 0), Vector3f(-M_PI, 0, min_dist), Vector3f(0, M_PI/4, max_dist)),
-            TreeSector(Vector3f(0, 1, 0), Vector3f(-1, 0, 0), Vector3f(-M_PI, 0, min_dist), Vector3f(0, M_PI/4, max_dist)),
-            TreeSector(Vector3f(-1, 0, 0), Vector3f(0, -1, 0), Vector3f(-M_PI, 0, min_dist), Vector3f(0, M_PI/4, max_dist)),
-            TreeSector(Vector3f(0, -1, 0), Vector3f(1, 0, 0), Vector3f(-M_PI, 0, min_dist), Vector3f(0, M_PI/4, max_dist)),
-            TreeSector(Vector3f(1, 0, 0), Vector3f(0, 1, 0), Vector3f(0, 0, min_dist), Vector3f(M_PI, M_PI/4, max_dist)),
-            TreeSector(Vector3f(0, 1, 0), Vector3f(-1, 0, 0), Vector3f(0, 0, min_dist), Vector3f(M_PI, M_PI/4, max_dist)),
-            TreeSector(Vector3f(-1, 0, 0), Vector3f(0, -1, 0), Vector3f(0, 0, min_dist), Vector3f(M_PI, M_PI/4, max_dist)),
-            TreeSector(Vector3f(0, -1, 0), Vector3f(1, 0, 0), Vector3f(0, 0, min_dist), Vector3f(M_PI, M_PI/4, max_dist)),
+            Sector(Vector3f(1, 0, 0), Vector3f(0, 1, 0), Vector3f(-M_PI, 0, min_dist), Vector3f(0, M_PI/4, max_dist)),
+            Sector(Vector3f(0, 1, 0), Vector3f(-1, 0, 0), Vector3f(-M_PI, 0, min_dist), Vector3f(0, M_PI/4, max_dist)),
+            Sector(Vector3f(-1, 0, 0), Vector3f(0, -1, 0), Vector3f(-M_PI, 0, min_dist), Vector3f(0, M_PI/4, max_dist)),
+            Sector(Vector3f(0, -1, 0), Vector3f(1, 0, 0), Vector3f(-M_PI, 0, min_dist), Vector3f(0, M_PI/4, max_dist)),
+            Sector(Vector3f(1, 0, 0), Vector3f(0, 1, 0), Vector3f(0, 0, min_dist), Vector3f(M_PI, M_PI/4, max_dist)),
+            Sector(Vector3f(0, 1, 0), Vector3f(-1, 0, 0), Vector3f(0, 0, min_dist), Vector3f(M_PI, M_PI/4, max_dist)),
+            Sector(Vector3f(-1, 0, 0), Vector3f(0, -1, 0), Vector3f(0, 0, min_dist), Vector3f(M_PI, M_PI/4, max_dist)),
+            Sector(Vector3f(0, -1, 0), Vector3f(1, 0, 0), Vector3f(0, 0, min_dist), Vector3f(M_PI, M_PI/4, max_dist)),
             // Bottom sector
-            TreeSector(Vector3f(1, 0, 0), Vector3f(0, 1, 0), Vector3f(-M_PI, 3*M_PI/4, min_dist), Vector3f(0, M_PI, max_dist)),
-            TreeSector(Vector3f(0, 1, 0), Vector3f(-1, 0, 0), Vector3f(-M_PI, 3*M_PI/4, min_dist), Vector3f(0, M_PI, max_dist)),
-            TreeSector(Vector3f(-1, 0, 0), Vector3f(0, -1, 0), Vector3f(-M_PI, 3*M_PI/4, min_dist), Vector3f(0, M_PI, max_dist)),
-            TreeSector(Vector3f(0, -1, 0), Vector3f(1, 0, 0), Vector3f(-M_PI, 3*M_PI/4, min_dist), Vector3f(0, M_PI, max_dist)),
-            TreeSector(Vector3f(1, 0, 0), Vector3f(0, 1, 0), Vector3f(0, 3*M_PI/4, min_dist), Vector3f(M_PI, M_PI, max_dist)),
-            TreeSector(Vector3f(0, 1, 0), Vector3f(-1, 0, 0), Vector3f(0, 3*M_PI/4, min_dist), Vector3f(M_PI, M_PI, max_dist)),
-            TreeSector(Vector3f(-1, 0, 0), Vector3f(0, -1, 0), Vector3f(0, 3*M_PI/4, min_dist), Vector3f(M_PI, M_PI, max_dist)),
-            TreeSector(Vector3f(0, -1, 0), Vector3f(1, 0, 0), Vector3f(0, 3*M_PI/4, min_dist), Vector3f(M_PI, M_PI, max_dist)),
+            Sector(Vector3f(1, 0, 0), Vector3f(0, 1, 0), Vector3f(-M_PI, 3*M_PI/4, min_dist), Vector3f(0, M_PI, max_dist)),
+            Sector(Vector3f(0, 1, 0), Vector3f(-1, 0, 0), Vector3f(-M_PI, 3*M_PI/4, min_dist), Vector3f(0, M_PI, max_dist)),
+            Sector(Vector3f(-1, 0, 0), Vector3f(0, -1, 0), Vector3f(-M_PI, 3*M_PI/4, min_dist), Vector3f(0, M_PI, max_dist)),
+            Sector(Vector3f(0, -1, 0), Vector3f(1, 0, 0), Vector3f(-M_PI, 3*M_PI/4, min_dist), Vector3f(0, M_PI, max_dist)),
+            Sector(Vector3f(1, 0, 0), Vector3f(0, 1, 0), Vector3f(0, 3*M_PI/4, min_dist), Vector3f(M_PI, M_PI, max_dist)),
+            Sector(Vector3f(0, 1, 0), Vector3f(-1, 0, 0), Vector3f(0, 3*M_PI/4, min_dist), Vector3f(M_PI, M_PI, max_dist)),
+            Sector(Vector3f(-1, 0, 0), Vector3f(0, -1, 0), Vector3f(0, 3*M_PI/4, min_dist), Vector3f(M_PI, M_PI, max_dist)),
+            Sector(Vector3f(0, -1, 0), Vector3f(1, 0, 0), Vector3f(0, 3*M_PI/4, min_dist), Vector3f(M_PI, M_PI, max_dist)),
             // -X -Y sector
-            TreeSector(Vector3f(0, 0, 1), Vector3f(1, -1, 0).normalized(), Vector3f(-M_PI, M_PI/4, min_dist), Vector3f(-M_PI/2, 3*M_PI/4, max_dist)),
-            TreeSector(Vector3f(1, -1, 0).normalized(), Vector3f(0, 0, -1), Vector3f(-M_PI, M_PI/4, min_dist), Vector3f(-M_PI/2, 3*M_PI/4, max_dist)),
-            TreeSector(Vector3f(0, 0, -1), Vector3f(-1, 1, 0).normalized(), Vector3f(-M_PI, M_PI/4, min_dist), Vector3f(-M_PI/2, 3*M_PI/4, max_dist)),
-            TreeSector(Vector3f(-1, 1, 0).normalized(), Vector3f(0, 0, 1), Vector3f(-M_PI, M_PI/4, min_dist), Vector3f(-M_PI/2, 3*M_PI/4, max_dist)),
+            Sector(Vector3f(0, 0, 1), Vector3f(1, -1, 0).normalized(), Vector3f(-M_PI, M_PI/4, min_dist), Vector3f(-M_PI/2, 3*M_PI/4, max_dist)),
+            Sector(Vector3f(1, -1, 0).normalized(), Vector3f(0, 0, -1), Vector3f(-M_PI, M_PI/4, min_dist), Vector3f(-M_PI/2, 3*M_PI/4, max_dist)),
+            Sector(Vector3f(0, 0, -1), Vector3f(-1, 1, 0).normalized(), Vector3f(-M_PI, M_PI/4, min_dist), Vector3f(-M_PI/2, 3*M_PI/4, max_dist)),
+            Sector(Vector3f(-1, 1, 0).normalized(), Vector3f(0, 0, 1), Vector3f(-M_PI, M_PI/4, min_dist), Vector3f(-M_PI/2, 3*M_PI/4, max_dist)),
             // +X -Y sector
-            TreeSector(Vector3f(0, 0, 1), Vector3f(-1, -1, 0).normalized(), Vector3f(-M_PI/2, M_PI/4, min_dist), Vector3f(0, 3*M_PI/4, max_dist)),
-            TreeSector(Vector3f(-1, -1, 0).normalized(), Vector3f(0, 0, -1), Vector3f(-M_PI/2, M_PI/4, min_dist), Vector3f(0, 3*M_PI/4, max_dist)),
-            TreeSector(Vector3f(0, 0, -1), Vector3f(1, 1, 0).normalized(), Vector3f(-M_PI/2, M_PI/4, min_dist), Vector3f(0, 3*M_PI/4, max_dist)),
-            TreeSector(Vector3f(1, 1, 0).normalized(), Vector3f(0, 0, 1), Vector3f(-M_PI/2, M_PI/4, min_dist), Vector3f(0, 3*M_PI/4, max_dist)),
+            Sector(Vector3f(0, 0, 1), Vector3f(-1, -1, 0).normalized(), Vector3f(-M_PI/2, M_PI/4, min_dist), Vector3f(0, 3*M_PI/4, max_dist)),
+            Sector(Vector3f(-1, -1, 0).normalized(), Vector3f(0, 0, -1), Vector3f(-M_PI/2, M_PI/4, min_dist), Vector3f(0, 3*M_PI/4, max_dist)),
+            Sector(Vector3f(0, 0, -1), Vector3f(1, 1, 0).normalized(), Vector3f(-M_PI/2, M_PI/4, min_dist), Vector3f(0, 3*M_PI/4, max_dist)),
+            Sector(Vector3f(1, 1, 0).normalized(), Vector3f(0, 0, 1), Vector3f(-M_PI/2, M_PI/4, min_dist), Vector3f(0, 3*M_PI/4, max_dist)),
             // +X +Y sector
-            TreeSector(Vector3f(0, 0, 1), Vector3f(1, -1, 0).normalized(), Vector3f(0, M_PI/4, min_dist), Vector3f(M_PI/2, 3*M_PI/4, max_dist)),
-            TreeSector(Vector3f(1, -1, 0).normalized(), Vector3f(0, 0, -1), Vector3f(0, M_PI/4, min_dist), Vector3f(M_PI/2, 3*M_PI/4, max_dist)),
-            TreeSector(Vector3f(0, 0, -1), Vector3f(-1, 1, 0).normalized(), Vector3f(0, M_PI/4, min_dist), Vector3f(M_PI/2, 3*M_PI/4, max_dist)),
-            TreeSector(Vector3f(-1, 1, 0).normalized(), Vector3f(0, 0, 1), Vector3f(0, M_PI/4, min_dist), Vector3f(M_PI/2, 3*M_PI/4, max_dist)),
+            Sector(Vector3f(0, 0, 1), Vector3f(1, -1, 0).normalized(), Vector3f(0, M_PI/4, min_dist), Vector3f(M_PI/2, 3*M_PI/4, max_dist)),
+            Sector(Vector3f(1, -1, 0).normalized(), Vector3f(0, 0, -1), Vector3f(0, M_PI/4, min_dist), Vector3f(M_PI/2, 3*M_PI/4, max_dist)),
+            Sector(Vector3f(0, 0, -1), Vector3f(-1, 1, 0).normalized(), Vector3f(0, M_PI/4, min_dist), Vector3f(M_PI/2, 3*M_PI/4, max_dist)),
+            Sector(Vector3f(-1, 1, 0).normalized(), Vector3f(0, 0, 1), Vector3f(0, M_PI/4, min_dist), Vector3f(M_PI/2, 3*M_PI/4, max_dist)),
             // -X +Y sector
-            TreeSector(Vector3f(0, 0, 1), Vector3f(-1, -1, 0).normalized(), Vector3f(M_PI/2, M_PI/4, min_dist), Vector3f(M_PI, 3*M_PI/4, max_dist)),
-            TreeSector(Vector3f(-1, -1, 0).normalized(), Vector3f(0, 0, -1), Vector3f(M_PI/2, M_PI/4, min_dist), Vector3f(M_PI, 3*M_PI/4, max_dist)),
-            TreeSector(Vector3f(0, 0, -1), Vector3f(1, 1, 0).normalized(), Vector3f(M_PI/2, M_PI/4, min_dist), Vector3f(M_PI, 3*M_PI/4, max_dist)),
-            TreeSector(Vector3f(1, 1, 0).normalized(), Vector3f(0, 0, 1), Vector3f(M_PI/2, M_PI/4, min_dist), Vector3f(M_PI, 3*M_PI/4, max_dist))
+            Sector(Vector3f(0, 0, 1), Vector3f(-1, -1, 0).normalized(), Vector3f(M_PI/2, M_PI/4, min_dist), Vector3f(M_PI, 3*M_PI/4, max_dist)),
+            Sector(Vector3f(-1, -1, 0).normalized(), Vector3f(0, 0, -1), Vector3f(M_PI/2, M_PI/4, min_dist), Vector3f(M_PI, 3*M_PI/4, max_dist)),
+            Sector(Vector3f(0, 0, -1), Vector3f(1, 1, 0).normalized(), Vector3f(M_PI/2, M_PI/4, min_dist), Vector3f(M_PI, 3*M_PI/4, max_dist)),
+            Sector(Vector3f(1, 1, 0).normalized(), Vector3f(0, 0, 1), Vector3f(M_PI/2, M_PI/4, min_dist), Vector3f(M_PI, 3*M_PI/4, max_dist))
         };
+
+        auto nbLines = std::distance(lines_first, lines_last);
 
         // Sort lines into sectors
         std::array<LineIt, 32> line_sector_ends;
         {
             LineIt it_begin = lines_first;
             int idx = 0;
-            for(TreeSector& sector : sectors)
+            for(Sector& sector : sectors)
             {
                 for(LineIt it = it_begin; it < lines_last; ++it)
                 {
-                    const Line& line = *it;
-                    if(Eigen::AlignedBox<float, 3>(sector.bounds.m_start, sector.bounds.m_end).contains(cart2spherical(line.m))
+                    const auto& line = (*it).*line_member;
+                    if(sector.bounds.ContainsMoment(cart2spherical(line.m))
                        && sector.bounds.d_bound_1.dot(line.d) >= 0 //greater or equal, or just greater?
                        && sector.bounds.d_bound_2.dot(line.d) >= 0)
                     {
@@ -631,7 +670,7 @@ public:
         {
             LineIt it_begin = lines_first;
             int idx = 0;
-            for(TreeSector& sector : sectors)
+            for(Sector& sector : sectors)
             {
                 LineIt it_end = line_sector_ends[idx];
                 auto count = std::distance(it_begin, it_end);
@@ -643,7 +682,7 @@ public:
             }
         }
 
-        return Tree(std::move(sectors));
+        return Tree<Content, line_member>(nbLines, std::move(sectors));
     }
 };
 

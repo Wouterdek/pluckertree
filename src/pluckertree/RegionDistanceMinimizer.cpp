@@ -40,7 +40,7 @@ public:
 
 
         Vector3_t k = spherical2cart(phi_k, theta_k, r_k);
-        Vector3_t kd = k.normalized();
+        Vector3_t kd = k / r_k;
         Vector3_t qp = q - kd*(q.dot(kd));
         Vector3_t qpd = qp.normalized();
         auto u = (qp - q).norm();
@@ -405,9 +405,6 @@ public:
 
 namespace pluckertree
 {
-    int pluckertree::TreeNode::visited = 0;
-    std::vector<float> pluckertree::TreeNode::results;
-
     double FindMinDist(
             const Eigen::Vector3f& point,
             const Eigen::Vector3f& dirLowerBound,
@@ -417,45 +414,72 @@ namespace pluckertree
             Eigen::Vector3f& minimum
     )
     {
-        TreeNode::results.clear();
+        auto minimize = [point,dirLowerBound,dirUpperBound,momentLowerBound,momentUpperBound](Eigen::Vector3f& minimum){
+            nlopt::opt opt(nlopt::LN_COBYLA, 3);//LN_NELDERMEAD, LN_SBPLX
 
-        nlopt::opt opt(nlopt::LN_COBYLA, 3);//LN_NELDERMEAD, LN_SBPLX
+            std::vector<double> lb(momentLowerBound.data(), momentLowerBound.data() + momentLowerBound.rows() * momentLowerBound.cols());
+            opt.set_lower_bounds(lb);
 
-        std::vector<double> lb(momentLowerBound.data(), momentLowerBound.data() + momentLowerBound.rows() * momentLowerBound.cols());
-        opt.set_lower_bounds(lb);
+            std::vector<double> hb(momentUpperBound.data(), momentUpperBound.data() + momentUpperBound.rows() * momentUpperBound.cols());
+            opt.set_upper_bounds(hb);
 
-        std::vector<double> hb(momentUpperBound.data(), momentUpperBound.data() + momentUpperBound.rows() * momentUpperBound.cols());
-        opt.set_upper_bounds(hb);
+            FixedMomentMinDist fun(point.cast<double>(), dirLowerBound.cast<double>(), dirUpperBound.cast<double>());
+            auto obj_func = [](const std::vector<double> &x, std::vector<double> &grad, void* f_data) -> double {
+                FixedMomentMinDist* fun = reinterpret_cast<FixedMomentMinDist*>(f_data);
+                Vector x_vect = Eigen::Vector3d {x[0], x[1], x[2]};
+                Vector grad_vect = Eigen::Vector3d {0, 0, 0};
+                auto result = (*fun)(x_vect, grad_vect);
+                return result;
+            };
+            opt.set_min_objective(obj_func, &fun);
 
-        FixedMomentMinDist fun(point.cast<double>(), dirLowerBound.cast<double>(), dirUpperBound.cast<double>());
-        auto obj_func = [](const std::vector<double> &x, std::vector<double> &grad, void* f_data) -> double {
-            FixedMomentMinDist* fun = reinterpret_cast<FixedMomentMinDist*>(f_data);
-            Vector x_vect = Eigen::Vector3d {x[0], x[1], x[2]};
-            Vector grad_vect = Eigen::Vector3d {0, 0, 0};
-            auto result = (*fun)(x_vect, grad_vect);
-            pluckertree::TreeNode::results.push_back(result);
-            return result;
+            opt.set_xtol_rel(1e-3);
+            opt.set_stopval(1e-3);
+
+            //Vector vec = (momentLowerBound + (momentUpperBound - momentLowerBound)/2.0f).cast<double>();
+            Vector vec = minimum.cast<double>();
+            std::vector<double> x(vec.data(), vec.data() + vec.rows() * vec.cols());
+
+            try
+            {
+                double minf;
+                nlopt::result result = opt.optimize(x, minf);
+
+                minimum = {x[0], x[1], x[2]};
+                return minf;
+            }
+            catch(std::exception &e) {
+                std::cout << "nlopt failed: " << e.what() << std::endl;
+                throw;
+            }
         };
-        opt.set_min_objective(obj_func, &fun);
-
-        opt.set_xtol_rel(1e-6);
-        opt.set_stopval(1e-6);
-
-        Vector vec = (momentLowerBound + (momentUpperBound - momentLowerBound)/2.0f).cast<double>();
-        std::vector<double> x(vec.data(), vec.data() + vec.rows() * vec.cols());
-
-        try
-        {
-            double minf;
-            nlopt::result result = opt.optimize(x, minf);
-
-            minimum = {x[0], x[1], x[2]};
-            return minf;
-        }
-        catch(std::exception &e) {
-            std::cout << "nlopt failed: " << e.what() << std::endl;
-            throw;
-        }
+        Eigen::Vector3f minHint;
+        //minHint = (momentLowerBound + (momentUpperBound - momentLowerBound)/2.0f);
+        double minVal = 1E99;
+        minHint = momentLowerBound;
+        minVal = std::min(minVal, minimize(minHint));
+        if(minVal < 1e-3){ return minVal; } //TODO: this can be higher if the parent node has a higher min dist value
+        minHint = momentUpperBound;
+        minVal = std::min(minVal, minimize(minHint));
+        if(minVal < 1e-3){ return minVal; }
+        minHint = Eigen::Vector3f(momentLowerBound.x(), momentLowerBound.y(), momentUpperBound.z());
+        minVal = std::min(minVal, minimize(minHint));
+        if(minVal < 1e-3){ return minVal; }
+        minHint = Eigen::Vector3f(momentLowerBound.x(), momentUpperBound.y(), momentLowerBound.z());
+        minVal = std::min(minVal, minimize(minHint));
+        if(minVal < 1e-3){ return minVal; }
+        minHint = Eigen::Vector3f(momentUpperBound.x(), momentLowerBound.y(), momentLowerBound.z());
+        minVal = std::min(minVal, minimize(minHint));
+        if(minVal < 1e-3){ return minVal; }
+        minHint = Eigen::Vector3f(momentLowerBound.x(), momentUpperBound.y(), momentUpperBound.z());
+        minVal = std::min(minVal, minimize(minHint));
+        if(minVal < 1e-3){ return minVal; }
+        minHint = Eigen::Vector3f(momentUpperBound.x(), momentUpperBound.y(), momentLowerBound.z());
+        minVal = std::min(minVal, minimize(minHint));
+        if(minVal < 1e-3){ return minVal; }
+        minHint = Eigen::Vector3f(momentUpperBound.x(), momentLowerBound.y(), momentUpperBound.z());
+        minVal = std::min(minVal, minimize(minHint));
+        return minVal;
 
         /*// Set up parameters
         LBFGSBParam<double> param;
@@ -491,8 +515,6 @@ namespace pluckertree
             Eigen::Vector3f& minimum
     )
     {
-        TreeNode::results.clear();
-
         nlopt::opt opt(nlopt::LN_COBYLA, 3);//LN_NELDERMEAD, LN_SBPLX
 
         std::vector<double> lb(momentLowerBound.data(), momentLowerBound.data() + momentLowerBound.rows() * momentLowerBound.cols());
@@ -507,7 +529,6 @@ namespace pluckertree
             Vector x_vect = Eigen::Vector3d {x[0], x[1], x[2]};
             Vector grad_vect = Eigen::Vector3d {0, 0, 0};
             auto result = (*fun)(x_vect, grad_vect);
-            pluckertree::TreeNode::results.push_back(result);
             return result;
         };
         opt.set_min_objective(obj_func, &fun);
@@ -609,6 +630,49 @@ struct GridPoint
 
 std::vector<GridPoint> CalculateBallSlice(
         const Eigen::Vector3f& point,
+        const Eigen::Vector3f& dirLowerBound,
+        const Eigen::Vector3f& dirUpperBound,
+        const Eigen::Vector3f& mlb,
+        const Eigen::Vector3f& mub,
+        float resolution
+)
+{
+    FixedMomentMinDist f(point.cast<double>(), dirLowerBound.cast<double>(), dirUpperBound.cast<double>());
+
+    Eigen::Vector3f stepSize = (mub - mlb) / resolution;
+
+    std::vector<GridPoint> points(resolution * resolution * resolution);
+
+    for(int x_i = 0; x_i < resolution; x_i++)
+    {
+        std::cout << ((float)x_i/(float)resolution)*100.0f << "%\r";
+        std::cout.flush();
+        auto x = mlb.x() + stepSize.x()*x_i;
+        for(int y_i = 0; y_i < resolution; y_i++)
+        {
+            auto y = mlb.y() + stepSize.y()*y_i;
+            for(int z_i = 0; z_i < resolution; z_i++)
+            {
+                auto z = mlb.z() + stepSize.z()*z_i;
+
+                Vector vect = Eigen::Vector3d(x, y, z);
+                Vector grad;
+                auto dist = f(vect, grad);
+
+                auto& curPoint = points[(x_i * resolution * resolution) + (y_i * resolution) + z_i];
+                curPoint.pos = spherical2cart(x, y, z);
+                curPoint.dist = dist;
+                //curPoint.grad = grad.cast<float>();
+            }
+        }
+    }
+    std::cout << std::endl;
+
+    return points;
+}
+
+std::vector<GridPoint> CalculateBallSlice(
+        const Eigen::Vector3f& point,
         const Eigen::Vector3f& query_point,
         const Eigen::Vector3f& dirLowerBound,
         const Eigen::Vector3f& dirUpperBound,
@@ -651,20 +715,26 @@ std::vector<GridPoint> CalculateBallSlice(
     return points;
 }
 
-void show_me_the_grid()
+void show_me_the_grid(std::string& file,
+                      const Eigen::Vector3f& dlb,
+                      const Eigen::Vector3f& dub,
+                      const Eigen::Vector3f& mlb,
+                      const Eigen::Vector3f& mub,
+                      const Eigen::Vector3f& q)
 {
-    Eigen::Vector3f dlb = Eigen::Vector3f(0,0,-1);
+    /*Eigen::Vector3f dlb = Eigen::Vector3f(0,0,-1);
     Eigen::Vector3f dub = Eigen::Vector3f(-std::sqrt(2)/2.0, std::sqrt(2)/2, 0);
     Eigen::Vector3f mlb(-M_PI, 0.785398185, 1);
     Eigen::Vector3f mub(-M_PI/2, 2.3561945, 80);
     Eigen::Vector3f q(25.216011, 86.2393799, 64.2581253);
-    Eigen::Vector3f q_normal(0.742901862, 0.662636876, 0.0949169919);
+    Eigen::Vector3f q_normal(0.742901862, 0.662636876, 0.0949169919);*/
 
     float resolution = 100;
-    auto data = CalculateBallSlice(q, q_normal, dlb, dub, mlb, mub, resolution);
+    //auto data = CalculateBallSlice(q, q_normal, dlb, dub, mlb, mub, resolution);
+    auto data = CalculateBallSlice(q, dlb, dub, mlb, mub, resolution);
 
     std::fstream myfile;
-    myfile = std::fstream("/home/wouter/Desktop/pluckerdata", std::ios::out | std::ios::binary);
+    myfile = std::fstream(file, std::ios::out | std::ios::binary);
 
     unsigned int size = data.size();
     myfile.write(reinterpret_cast<char*>(&size), sizeof(unsigned int));
