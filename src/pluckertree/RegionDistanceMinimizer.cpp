@@ -435,6 +435,8 @@ namespace pluckertree
 
             opt.set_xtol_rel(1e-3);
             opt.set_stopval(1e-3);
+            opt.set_maxtime(1);
+            opt.set_maxeval(1000);
 
             //Vector vec = (momentLowerBound + (momentUpperBound - momentLowerBound)/2.0f).cast<double>();
             Vector vec = minimum.cast<double>();
