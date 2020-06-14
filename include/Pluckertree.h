@@ -156,6 +156,9 @@ void iter_insert(Iterator position, Iterator end, const Value& val)
 }
 
 constexpr float margin = 0;
+struct Diag {
+    static thread_local int visited;
+};
 
 template<class Content, Line Content::*line_member>
 class TreeNode
@@ -170,6 +173,7 @@ public:
     uint8_t bound_component_idx : 2;
     //uint8_t pad1 : 6;
     //uint8_t pad2[7];
+    static thread_local int visited;
 
     TreeNode(uint8_t bound_component_idx, float m_component, Content content)
         : type(NodeType::moment), bound_component_idx(bound_component_idx), m_component(m_component), content(std::move(content)), children() {}
@@ -188,6 +192,7 @@ public:
             float moment_min_hint_dist
     ) const
     {
+        Diag::visited++;
         std::array<float, 2> minimumDistances {};
         std::array<Bounds, 2> childBounds {};
         std::array<Eigen::Vector3f, 2> childMomentMinima {};
@@ -223,7 +228,7 @@ public:
                     if(i == 0)
                     {
                         childBounds[i].d_bound_1 = this->d_bound;
-                        childBounds[i].d_bound_2 = bounds.d_bound_1;
+                        childBounds[i].d_bound_2 = bounds.d_bound_2;
                     }else
                     {
                         childBounds[i].d_bound_1 = bounds.d_bound_1;
@@ -280,11 +285,14 @@ public:
             const Eigen::Vector3f& query_normal,
             OutputIt out_first, OutputIt out_last,
             float& max_dist,
-            const Bounds& bounds
+            const Bounds& bounds,
+            const Eigen::Vector3f& moment_min_hint,
+            float moment_min_hint_dist
     ) const
     {
         std::array<float, 2> minimumDistances {};
         std::array<Bounds, 2> childBounds {};
+        std::array<Eigen::Vector3f, 2> childMomentMinima {};
 
         for(int i = 0; i < 2; ++i)
         {
@@ -300,17 +308,24 @@ public:
                 {
                     if(i == 0)
                     {
-                        childBounds[i].m_end[this->bound_component_idx] = m_component;
+                        childBounds[0].m_end[this->bound_component_idx] = m_component;
                     }else
                     {
-                        childBounds[i].m_start[this->bound_component_idx] = m_component;
+                        childBounds[1].m_start[this->bound_component_idx] = m_component;
+                    }
+
+                    if(childBounds[i].ContainsMoment(moment_min_hint)) //TODO: test
+                    {
+                        childMomentMinima[i] = moment_min_hint;
+                        minimumDistances[i] = moment_min_hint_dist;
+                        continue;
                     }
                 } else
                 {
                     if(i == 0)
                     {
                         childBounds[i].d_bound_1 = this->d_bound;
-                        childBounds[i].d_bound_2 = bounds.d_bound_1;
+                        childBounds[i].d_bound_2 = bounds.d_bound_2;
                     }else
                     {
                         childBounds[i].d_bound_1 = bounds.d_bound_1;
@@ -318,8 +333,9 @@ public:
                     }
                 }
 
-                Eigen::Vector3f min_m;
-                minimumDistances[i] = FindMinHitDist(query_point, query_normal, childBounds[i].d_bound_1, childBounds[i].d_bound_2, childBounds[i].m_start, childBounds[i].m_end, min_m);
+                childMomentMinima[i] = moment_min_hint;
+                childBounds[i].Clip(childMomentMinima[i]);
+                minimumDistances[i] = FindMinHitDist(query_point, query_normal, childBounds[i].d_bound_1, childBounds[i].d_bound_2, childBounds[i].m_start, childBounds[i].m_end, childMomentMinima[i]);
             }
         }
 
@@ -339,7 +355,7 @@ public:
                 break;
             }
 
-            auto nbResultsInNode = children[idx]->FindNearestHits(query_point, query_normal, out_first, out_last, max_dist, childBounds[idx]);
+            auto nbResultsInNode = children[idx]->FindNearestHits(query_point, query_normal, out_first, out_last, max_dist, childBounds[idx], childMomentMinima[idx], minimumDistances[idx]);
             nbResultsFound = std::min(nbResultsFound + nbResultsInNode, resultsListLength);
         }
 
@@ -409,6 +425,8 @@ public:
     	float& max_dist
 	) const
     {
+        Diag::visited = 0;
+
         std::array<float, 32> minimumDistances {};
         std::array<Eigen::Vector3f, 32> moment_min_hints {};
         for(int i = 0; i < minimumDistances.size(); ++i)
@@ -448,6 +466,7 @@ public:
                     query_point, out_first, out_last, max_dist, curBounds, moment_min_hints[idx], minimumDistances[idx]);
             nbResultsFound = std::min(nbResultsFound + nbResultsInNode, resultsListLength);
         }
+        //std::cout << "visited " << Diag::visited << "/" << size() << std::endl;
         return nbResultsFound;
     }
 
@@ -460,6 +479,7 @@ public:
     ) const
     {
         std::array<float, 32> minimumDistances {};
+        std::array<Eigen::Vector3f, 32> moment_min_hints {};
         for(int i = 0; i < minimumDistances.size(); ++i)
         {
             const auto& sector = sectors[i];
@@ -468,8 +488,8 @@ public:
                 minimumDistances[i] = std::numeric_limits<float>::infinity();
             } else
             {
-                Eigen::Vector3f min_m;
-                minimumDistances[i] = FindMinHitDist(query_point, query_normal, sector.bounds.d_bound_1, sector.bounds.d_bound_2, sector.bounds.m_start, sector.bounds.m_end, min_m);
+                moment_min_hints[i] = sector.bounds.m_start + (sector.bounds.m_end - sector.bounds.m_start)/2;
+                minimumDistances[i] = FindMinDist(query_point, sector.bounds.d_bound_1, sector.bounds.d_bound_2, sector.bounds.m_start, sector.bounds.m_end, moment_min_hints[i]);
             }
         }
 
@@ -492,8 +512,9 @@ public:
                 break;
             }
 
+            const auto& curBounds = sectors[idx].bounds;
             auto nbResultsInNode = sectors[idx].rootNode->FindNearestHits(
-                    query_point, query_normal, out_first, out_last, max_dist, sectors[idx].bounds);
+                    query_point, query_normal, out_first, out_last, max_dist, curBounds, moment_min_hints[idx], minimumDistances[idx]);
             nbResultsFound = std::min(nbResultsFound + nbResultsInNode, resultsListLength);
         }
         return nbResultsFound;
@@ -533,14 +554,15 @@ private:
         mVarianceVect = mVarianceVect.cwiseQuotient(mVarianceNormFact);
         auto mVariance = mVarianceVect.maxCoeff(&splitComponent);
 
-        //auto mBoundCompDist = (bounds.m_end[splitComponent] - bounds.m_start[splitComponent]);
-        //auto mMaxPossibleVariance = (mBoundCompDist * mBoundCompDist) / 4;
-        //auto mVarianceNormalized = mVariance / mMaxPossibleVariance;
-
         // Calculate directional variance
         // project direction vectors to bound domain, calculate variance of sine of angle to bound, and use this to decide NodeType
-        /*Eigen::Vector3f cur_bound;
-        Eigen::Vector3f bound_domain_normal;
+        const Eigen::Vector3f& cur_bound = bounds.d_bound_1;
+        Eigen::Vector3f bound_domain_normal = bounds.d_bound_1.cross(bounds.d_bound_2).normalized();
+        if(bound_domain_normal.dot(bounds.m_start) < 0)
+        {
+            bound_domain_normal *= -1;
+        }
+
         auto calc_sine = [](const Eigen::Vector3f& d, const Eigen::Vector3f& bound_domain_normal, const Eigen::Vector3f& cur_bound){
             Eigen::Vector3f cross1 = (d - bound_domain_normal * bound_domain_normal.dot(d)).normalized().cross(cur_bound);
             auto sin = cross1.norm();
@@ -550,33 +572,38 @@ private:
             }
             return sin;
         };
-        auto dVariance = calc_variance(lines_begin, lines_end, [&bound_domain_normal, &cur_bound, calc_sine](const Line& line){
+        auto dVariance = calc_variance(lines_begin, lines_end, [&bound_domain_normal, &cur_bound, calc_sine](const Content& c){
+            const auto& line = c.*line_member;
             return calc_sine(line.d, bound_domain_normal, cur_bound);
         });
-        auto dMaxPossibleVariance = ; //TODO
+        auto dMaxSin = bounds.d_bound_1.cross(bounds.d_bound_2).norm();
+        auto dMaxPossibleVariance = (dMaxSin * dMaxSin)/4; //Assumes angle between bounds >= 90°
         auto dVarianceNormalized = dVariance / dMaxPossibleVariance;
 
-        if(dVarianceNormalized > mVarianceNormalized)
+        if(dVarianceNormalized > mVariance)
         {
             // calculate new bound vector: calc cross product of dir vectors with cur bound vector to obtain sin,
             // sort by sin, take median, new bound vector is cross product of bound_domain_normal with median dir vect
             // Given bounds b1 and b2 in parent, and new bound vector nb, the childrens bounds are as follows:
-            // child 1: {nb, b1}, child 2: {b1, -nb}
+            // child 1: {nb, b2}, child 2: {b1, -nb}
 
-            std::sort(lines_begin, lines_end, [&cur_bound, &bound_domain_normal, calc_sine](const Line& l1, const Line& l2){
+            std::sort(lines_begin, lines_end, [&cur_bound, &bound_domain_normal, calc_sine](const Content& c1, const Content& c2){
+                const auto& l1 = c1.*line_member;
+                const auto& l2 = c2.*line_member;
                 auto sin1 = calc_sine(l1.d, bound_domain_normal, cur_bound);
                 auto sin2 = calc_sine(l2.d, bound_domain_normal, cur_bound);
                 return sin1 < sin2;
             });
             pivot = lines_begin + (lines_end - lines_begin)/2;
-            Eigen::Vector3f dir_bound = bound_domain_normal.cross(pivot->d).normalized();
-            subBounds1.d_bound_1;
-            subBounds1.d_bound_2;
-            subBounds2.d_bound_1;
-            subBounds2.d_bound_2;
+            const auto& pivotLine = (*pivot).*line_member;
+            Eigen::Vector3f dir_bound = bound_domain_normal.cross(pivotLine.d).normalized();
+            subBounds1.d_bound_1 = dir_bound;
+            subBounds1.d_bound_2 = bounds.d_bound_2;
+            subBounds2.d_bound_1 = bounds.d_bound_1;
+            subBounds2.d_bound_2 = -dir_bound;
 
-            node = std::make_unique<TreeNode>(dir_bound, *pivot);
-        } else*/
+            node = std::make_unique<Node>(dir_bound, *pivot);
+        } else
         {
             std::sort(lines_begin, lines_end, [splitComponent](const Content& c1, const Content& c2){
                 const auto& l1 = c1.*line_member;

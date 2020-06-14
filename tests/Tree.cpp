@@ -89,15 +89,12 @@ struct LineWrapper
 //100, 100, 3496756572, 1131774831
 //100, 100, 2127983384, 597997659
 //100, 100, 1932884953, 3564452931 x2
-
-//100, 100, 2124991815, 762478936
-//100, 100, 1328574106, 638929644
 #include <chrono>
 
 
-TEST(Tree, TestFindNeighbours_1_Random)
+TEST(Tree, DISABLED_TestFindNeighbours_1_Random)
 {
-    for(int pass = 0; pass < 120; ++pass)
+    for(int pass = 0; pass < 100; ++pass)
     {
         unsigned int line_count = 100;
         unsigned int query_count = 100;
@@ -113,10 +110,14 @@ TEST(Tree, TestFindNeighbours_1_Random)
             std::default_random_engine rng{seed};
             std::uniform_real_distribution<float> dist(0, 100);
             for (int i = 0; i < line_count; ++i) {
-                lines.emplace_back(Line::FromTwoPoints(
-                        Vector3f(dist(rng), dist(rng), dist(rng)),
-                        Vector3f(dist(rng), dist(rng), dist(rng))
-                ));
+                Line l(Vector3f::Zero(), Vector3f::Zero());
+                do {
+                    l = Line::FromTwoPoints(
+                            Vector3f(dist(rng), dist(rng), dist(rng)),
+                            Vector3f(dist(rng), dist(rng), dist(rng))
+                    );
+                }while(l.m.norm() >= 150);
+                lines.emplace_back(l);
             }
         }
 
@@ -166,7 +167,7 @@ TEST(Tree, TestFindNeighbours_1_Random)
             Vector3f m_spher = cart2spherical(SmallestLine.m);
             std::vector<int> idx;
             int sectI = 0;
-            for (const auto &sector: tree.sectors) {
+            /*for (const auto &sector: tree.sectors) {
                 if (Eigen::AlignedBox<float, 3>(sector.bounds.m_start, sector.bounds.m_end).contains(
                         cart2spherical(SmallestLine.m))
                     && sector.bounds.d_bound_1.dot(SmallestLine.d) >= 0 //greater or equal, or just greater?
@@ -176,8 +177,17 @@ TEST(Tree, TestFindNeighbours_1_Random)
                     Bounds b1 = sector.bounds;
                     while (node != nullptr) {
                         //Bounds b2 = sector.bounds;
-                        b1.m_end[node->bound_component_idx] = node->m_component;
-                        //b2.m_start[sector.rootNode->bound_component_idx] = sector.rootNode->m_component;
+                        if(node->type == NodeType::moment)
+                        {
+                            b1.m_end[node->bound_component_idx] = node->m_component;
+                            //b2.m_start[sector.rootNode->bound_component_idx] = sector.rootNode->m_component;
+                        } else
+                        {
+                            b1.d_bound_1 = node->d_bound;
+                            //b1.d_bound_2 = bounds.d_bound_2;
+                        }
+
+
                         if (Eigen::AlignedBox<float, 3>(b1.m_start, b1.m_end).contains(cart2spherical(SmallestLine.m))
                             && b1.d_bound_1.dot(SmallestLine.d) >= 0 //greater or equal, or just greater?
                             && b1.d_bound_2.dot(SmallestLine.d) >= 0) {
@@ -191,7 +201,7 @@ TEST(Tree, TestFindNeighbours_1_Random)
                     break;
                 }
                 sectI++;
-            }
+            }*/
 
             if (SmallestLine != result[0]->l) {
                 std::cout << std::endl;
@@ -213,24 +223,26 @@ TEST(Tree, TestFindNeighbours_1_Random)
 
 TEST(Tree, DISABLED_ShowMeTheGrid)
 {
+    //dlb, dub, m_start, m_end
+
     /*Eigen::Vector3f dlb = Eigen::Vector3f(0,0,-1);
     Eigen::Vector3f dub = Eigen::Vector3f(-std::sqrt(2)/2.0, std::sqrt(2)/2, 0);
     Eigen::Vector3f mlb(-M_PI, 0.785398185, 1);
     Eigen::Vector3f mub(-M_PI/2, 2.3561945, 80);
     Eigen::Vector3f q(39.110939, 52.7779579, 40.48032);*/
-    Eigen::Vector3f dlb = Eigen::Vector3f(1,0,0);
-    Eigen::Vector3f dub = Eigen::Vector3f(0,1,0);
-    Eigen::Vector3f mlb(-M_PI,2.3561945,1);
-    Eigen::Vector3f mub(0, M_PI, 100);
-    Eigen::Vector3f q(23.0455322,28.209856,7.77225065);
-    std::string file = "/home/wouter/Desktop/pluckerdata/7";
+    Eigen::Vector3f dlb = Eigen::Vector3f(0.707106769, 0.707106769, 0);
+    Eigen::Vector3f dub = Eigen::Vector3f(0,0,1);
+    Eigen::Vector3f mlb(1.57079637, 0.785398185, 129.264511);
+    Eigen::Vector3f mub(2.27183151, 1.74038839, 133.691605);
+    Eigen::Vector3f q(28.2510929,16.3163109,34.3497543);
+    std::string file = "/home/wouter/Desktop/pluckerdata/0";
     pluckertree::show_me_the_grid(file, dlb, dub, mlb, mub, q);
 }
 
 //3377894755, 4158056333
-TEST(Tree, DISABLED_TestFindNearestHit_Random)
+TEST(Tree, TestFindNearestHit_Random)
 {
-    //for(int pass = 0; pass < 10; ++pass)
+    for(int pass = 0; pass < 100; ++pass)
     {
 
     unsigned int line_count = 100;
@@ -242,16 +254,20 @@ TEST(Tree, DISABLED_TestFindNearestHit_Random)
     {
         lines.reserve(line_count);
 
-        unsigned int seed = 3377894755;//dev();
+        unsigned int seed = dev();
         std::cout << "Line generation seed: " << seed << std::endl;
         std::default_random_engine rng {seed};
         std::uniform_real_distribution<float> dist(0, 100);
         for(int i = 0; i < line_count; ++i)
         {
-            lines.emplace_back(Line::FromTwoPoints(
-                    Vector3f(dist(rng), dist(rng), dist(rng)),
-                    Vector3f(dist(rng), dist(rng), dist(rng))
-            ));
+            Line l(Vector3f::Zero(), Vector3f::Zero());
+            do {
+                l = Line::FromTwoPoints(
+                        Vector3f(dist(rng), dist(rng), dist(rng)),
+                        Vector3f(dist(rng), dist(rng), dist(rng))
+                );
+            }while(l.m.norm() >= 150);
+            lines.emplace_back(l);
         }
     }
 
@@ -263,7 +279,7 @@ TEST(Tree, DISABLED_TestFindNearestHit_Random)
         query_points.reserve(query_count);
         query_point_normals.reserve(query_count);
 
-        unsigned int seed = 4158056333;//dev();
+        unsigned int seed = dev();
         std::cout << "Query generation seed: " << seed << std::endl;
         std::default_random_engine rng {seed};
         std::uniform_real_distribution<float> dist(0, 100);
@@ -279,7 +295,7 @@ TEST(Tree, DISABLED_TestFindNearestHit_Random)
     std::array<const LineWrapper*, 1> result { nullptr };
 
     int i = 0;
-    for(unsigned int query_i = 18; query_i < query_points.size(); ++query_i)
+    for(unsigned int query_i = 0; query_i < query_points.size(); ++query_i)
     {
         const auto& query = query_points[query_i];
         const auto& query_normal = query_point_normals[query_i];
@@ -308,27 +324,33 @@ TEST(Tree, DISABLED_TestFindNearestHit_Random)
         Vector3f m_spher = cart2spherical(SmallestLine.m);
         std::vector<int> idx;
         int sectI = 0;
-        for(const auto& sector: tree.sectors)
-        {
-            if(Eigen::AlignedBox<float, 3>(sector.bounds.m_start, sector.bounds.m_end).contains(cart2spherical(SmallestLine.m))
-               && sector.bounds.d_bound_1.dot(SmallestLine.d) >= 0 //greater or equal, or just greater?
-               && sector.bounds.d_bound_2.dot(SmallestLine.d) >= 0)
-            {
+        /*for (const auto &sector: tree.sectors) {
+            if (Eigen::AlignedBox<float, 3>(sector.bounds.m_start, sector.bounds.m_end).contains(
+                    cart2spherical(SmallestLine.m))
+                && sector.bounds.d_bound_1.dot(SmallestLine.d) >= 0 //greater or equal, or just greater?
+                && sector.bounds.d_bound_2.dot(SmallestLine.d) >= 0) {
                 idx.push_back(sectI);
-                const auto* node = sector.rootNode.get();
+                const auto *node = sector.rootNode.get();
                 Bounds b1 = sector.bounds;
-                while(node != nullptr)
-                {
+                while (node != nullptr) {
                     //Bounds b2 = sector.bounds;
-                    b1.m_end[node->bound_component_idx] = node->m_component;
-                    //b2.m_start[sector.rootNode->bound_component_idx] = sector.rootNode->m_component;
-                    if(Eigen::AlignedBox<float, 3>(b1.m_start, b1.m_end).contains(cart2spherical(SmallestLine.m))
-                       && b1.d_bound_1.dot(SmallestLine.d) >= 0 //greater or equal, or just greater?
-                       && b1.d_bound_2.dot(SmallestLine.d) >= 0)
+                    if(node->type == NodeType::moment)
                     {
+                        b1.m_end[node->bound_component_idx] = node->m_component;
+                        //b2.m_start[sector.rootNode->bound_component_idx] = sector.rootNode->m_component;
+                    } else
+                    {
+                        b1.d_bound_1 = node->d_bound;
+                        //b1.d_bound_2 = bounds.d_bound_2;
+                    }
+
+
+                    if (Eigen::AlignedBox<float, 3>(b1.m_start, b1.m_end).contains(cart2spherical(SmallestLine.m))
+                        && b1.d_bound_1.dot(SmallestLine.d) >= 0 //greater or equal, or just greater?
+                        && b1.d_bound_2.dot(SmallestLine.d) >= 0) {
                         idx.push_back(0);
                         node = node->children[0].get();
-                    }else{
+                    } else {
                         idx.push_back(1);
                         node = node->children[1].get();
                     }
@@ -336,7 +358,7 @@ TEST(Tree, DISABLED_TestFindNearestHit_Random)
                 break;
             }
             sectI++;
-        }
+        }*/
 
         if(SmallestLine != result[0]->l)
         {
