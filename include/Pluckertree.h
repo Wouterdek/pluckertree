@@ -527,10 +527,15 @@ private:
 
         // Calculate max moment variance
         Eigen::Array3f mVarianceVect = calc_vec3_variance(lines_begin, lines_end, [](const Content& c){return cart2spherical((c.*line_member).m); });
+        Eigen::Array3f mVarianceNormFact = (bounds.m_end - bounds.m_start).array();
+        mVarianceNormFact = mVarianceNormFact * mVarianceNormFact;
+        mVarianceNormFact /= 4;
+        mVarianceVect = mVarianceVect.cwiseQuotient(mVarianceNormFact);
         auto mVariance = mVarianceVect.maxCoeff(&splitComponent);
-        auto mBoundCompDist = (bounds.m_end[splitComponent] - bounds.m_start[splitComponent]);
-        auto mMaxPossibleVariance = (mBoundCompDist * mBoundCompDist) / 4;
-        auto mVarianceNormalized = mVariance / mMaxPossibleVariance;
+
+        //auto mBoundCompDist = (bounds.m_end[splitComponent] - bounds.m_start[splitComponent]);
+        //auto mMaxPossibleVariance = (mBoundCompDist * mBoundCompDist) / 4;
+        //auto mVarianceNormalized = mVariance / mMaxPossibleVariance;
 
         // Calculate directional variance
         // project direction vectors to bound domain, calculate variance of sine of angle to bound, and use this to decide NodeType
@@ -580,10 +585,11 @@ private:
             });
             pivot = lines_begin + (lines_end - lines_begin)/2;
             const auto& pivotLine = (*pivot).*line_member;
-            subBounds1.m_end[splitComponent] = pivotLine.m[splitComponent];
-            subBounds2.m_start[splitComponent] = pivotLine.m[splitComponent];
+            auto splitCompVal = cart2spherical(pivotLine.m)[splitComponent];
+            subBounds1.m_end[splitComponent] = splitCompVal;
+            subBounds2.m_start[splitComponent] = splitCompVal;
 
-            node = std::make_unique<Node>(splitComponent, cart2spherical(pivotLine.m)[splitComponent], *pivot);
+            node = std::make_unique<Node>(splitComponent, splitCompVal, *pivot);
         }
 
         // Store iterators and bounds and then recurse
