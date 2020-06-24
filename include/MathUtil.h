@@ -30,7 +30,8 @@ float calc_variance(Iter begin, Iter end, Accessor f)
         total += f(*it);
     }
 
-    float avg = total / std::distance(begin, end);
+    auto elemCount = std::distance(begin, end);
+    float avg = total / elemCount;
 
     float variance = 0;
     for(auto it = begin; it < end; ++it)
@@ -38,7 +39,7 @@ float calc_variance(Iter begin, Iter end, Accessor f)
         float cur = f(*it) - avg;
         variance += cur * cur;
     }
-    variance /= (std::distance(begin, end) - 1);
+    variance /= (elemCount - 1);
 
     return variance;
 }

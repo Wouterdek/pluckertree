@@ -160,6 +160,29 @@ struct Diag {
     static thread_local int visited;
 };
 
+template<class Content, class DistF, class OutputIt, typename = typename std::enable_if<std::is_same<const Content*, typename std::iterator_traits<OutputIt>::value_type>::value>::type>
+static float insert(const Content* elem, OutputIt out_first, OutputIt out_end, const Eigen::Vector3f& query_point, const DistF& distF)
+{
+    auto it = std::lower_bound(out_first, out_end, elem, [&query_point, distF](const Content* c1, const Content* c2){
+        auto dist1 = c1 == nullptr ? std::numeric_limits<float>::infinity() : distF(c1, query_point).squaredNorm();
+        auto dist2 = c2 == nullptr ? std::numeric_limits<float>::infinity() : distF(c2, query_point).squaredNorm();
+        return dist1 < dist2;
+    });
+
+    if(it != out_end)
+    {
+        iter_insert(it, out_end, elem);
+    }
+
+    auto lastElemPtr = *(out_end - 1);
+    if(lastElemPtr == nullptr)
+    {
+        return std::numeric_limits<float>::infinity();
+    }
+
+    return distF(lastElemPtr, query_point).norm();
+}
+
 template<class Content, Line Content::*line_member>
 class TreeNode
 {
@@ -290,6 +313,7 @@ public:
             float moment_min_hint_dist
     ) const
     {
+        Diag::visited++;
         std::array<float, 2> minimumDistances {};
         std::array<Bounds, 2> childBounds {};
         std::array<Eigen::Vector3f, 2> childMomentMinima {};
@@ -376,29 +400,6 @@ public:
 
         return nbResultsFound;
     }
-
-    template<class DistF, class OutputIt, typename = typename std::enable_if<std::is_same<const Content*, typename std::iterator_traits<OutputIt>::value_type>::value>::type>
-    static float insert(const Content* elem, OutputIt out_first, OutputIt out_end, const Eigen::Vector3f& query_point, const DistF& distF)
-    {
-        auto it = std::lower_bound(out_first, out_end, elem, [&query_point, distF](const Content* c1, const Content* c2){
-            auto dist1 = c1 == nullptr ? std::numeric_limits<float>::infinity() : distF(c1, query_point).squaredNorm();
-            auto dist2 = c2 == nullptr ? std::numeric_limits<float>::infinity() : distF(c2, query_point).squaredNorm();
-            return dist1 < dist2;
-        });
-
-        if(it != out_end)
-        {
-            iter_insert(it, out_end, elem);
-        }
-
-        auto lastElemPtr = *(out_end - 1);
-        if(lastElemPtr == nullptr)
-        {
-            return std::numeric_limits<float>::infinity();
-        }
-
-        return distF(lastElemPtr, query_point).norm();
-    }
 };
 
 template<typename Content, Line Content::*line_member>
@@ -478,6 +479,8 @@ public:
             float& max_dist
     ) const
     {
+        Diag::visited = 0;
+
         std::array<float, 32> minimumDistances {};
         std::array<Eigen::Vector3f, 32> moment_min_hints {};
         for(int i = 0; i < minimumDistances.size(); ++i)
@@ -517,6 +520,7 @@ public:
                     query_point, query_normal, out_first, out_last, max_dist, curBounds, moment_min_hints[idx], minimumDistances[idx]);
             nbResultsFound = std::min(nbResultsFound + nbResultsInNode, resultsListLength);
         }
+        std::cout << "visited " << Diag::visited << "/" << size() << std::endl;
         return nbResultsFound;
     }
 };
