@@ -3,18 +3,10 @@
 #include <PluckertreeSegments.h>
 #include <iostream>
 #include <random>
+#include "DataSetGenerator.h"
 
 using namespace testing;
 using namespace Eigen;
-
-using Line = pluckertree::Line;
-using LineSegment = pluckertree::segments::LineSegment;
-
-struct LineSegmentWrapper
-{
-    LineSegment l;
-    explicit LineSegmentWrapper(LineSegment line) : l(std::move(line)) {}
-};
 
 TEST(Tree, DISABLED_TestFindNeighbouringLineSegments_Random)
 {
@@ -25,33 +17,9 @@ TEST(Tree, DISABLED_TestFindNeighbouringLineSegments_Random)
 
         std::random_device dev{};
 
-        std::vector<LineSegmentWrapper> lines{};
-        {
-            lines.reserve(line_count);
-
-            unsigned int seed = dev();
-            std::cout << "Line segment generation seed: " << seed << std::endl;
-            std::default_random_engine rng{seed};
-            std::uniform_real_distribution<float> dist(0, 100);
-            std::uniform_real_distribution<float> distT(-100, 100);
-            for (int i = 0; i < line_count; ++i) {
-                LineSegment l(Line(Vector3f::Zero(), Vector3f::Zero()), 0, 0);
-                do {
-                    float t1 = distT(rng);
-                    float t2 = distT(rng);
-                    if(t1 > t2)
-                    {
-                        std::swap(t1, t2);
-                    }
-
-                    l = LineSegment(Line::FromTwoPoints(
-                            Vector3f(dist(rng), dist(rng), dist(rng)),
-                            Vector3f(dist(rng), dist(rng), dist(rng))
-                    ), t1, t2);
-                }while(l.l.m.norm() >= 150);
-                lines.emplace_back(l);
-            }
-        }
+        unsigned int seed = dev();
+        std::cout << "Line segment generation seed: " << seed << std::endl;
+        std::vector<LineSegmentWrapper> lines = GenerateRandomLineSegments(dev, seed, line_count, 100, -100, 100);
 
         auto tree = pluckertree::segments::TreeBuilder<LineSegmentWrapper, &LineSegmentWrapper::l>::Build(lines.begin(), lines.end());
 
@@ -166,33 +134,9 @@ TEST(Tree, TestFindNearestHitLineSegments_Random)
 
         std::random_device dev{};
 
-        std::vector<LineSegmentWrapper> lines{};
-        {
-            lines.reserve(line_count);
-
-            unsigned int seed = dev();
-            std::cout << "Line segment generation seed: " << seed << std::endl;
-            std::default_random_engine rng{seed};
-            std::uniform_real_distribution<float> dist(0, 100);
-            std::uniform_real_distribution<float> distT(-100, 100);
-            for (int i = 0; i < line_count; ++i) {
-                LineSegment l(Line(Vector3f::Zero(), Vector3f::Zero()), 0, 0);
-                do {
-                    float t1 = distT(rng);
-                    float t2 = distT(rng);
-                    if(t1 > t2)
-                    {
-                        std::swap(t1, t2);
-                    }
-
-                    l = LineSegment(Line::FromTwoPoints(
-                            Vector3f(dist(rng), dist(rng), dist(rng)),
-                            Vector3f(dist(rng), dist(rng), dist(rng))
-                    ), t1, t2);
-                }while(l.l.m.norm() >= 150);
-                lines.emplace_back(l);
-            }
-        }
+        unsigned int seed = dev();
+        std::cout << "Line segment generation seed: " << seed << std::endl;
+        std::vector<LineSegmentWrapper> lines = GenerateRandomLineSegments(dev, seed, line_count, 100, -100, 100);
 
         auto tree = pluckertree::segments::TreeBuilder<LineSegmentWrapper, &LineSegmentWrapper::l>::Build(lines.begin(), lines.end());
 

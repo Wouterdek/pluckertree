@@ -1,8 +1,9 @@
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
-#include <Pluckertree.h>
 #include <iostream>
+#include <Pluckertree.h>
 #include <random>
+#include "DataSetGenerator.h"
 
 using namespace testing;
 using namespace pluckertree;
@@ -54,11 +55,6 @@ TEST(Tree, TestFindNeighbours)
 {
 }
 
-struct LineWrapper
-{
-    Line l;
-    explicit LineWrapper(Line line) : l(std::move(line)) {}
-};
 
 //100, 100, 3224486327, 1750131217, nlopt roundoff-limited
 //100, 100, 4161057528, 2131736907, nlopt roundoff-limited
@@ -101,25 +97,9 @@ TEST(Tree, DISABLED_TestFindNeighbours_1_Random)
 
         std::random_device dev{};
 
-        std::vector<LineWrapper> lines{};
-        {
-            lines.reserve(line_count);
-
-            unsigned int seed = dev();
-            std::cout << "Line generation seed: " << seed << std::endl;
-            std::default_random_engine rng{seed};
-            std::uniform_real_distribution<float> dist(0, 100);
-            for (int i = 0; i < line_count; ++i) {
-                Line l(Vector3f::Zero(), Vector3f::Zero());
-                do {
-                    l = Line::FromTwoPoints(
-                            Vector3f(dist(rng), dist(rng), dist(rng)),
-                            Vector3f(dist(rng), dist(rng), dist(rng))
-                    );
-                }while(l.m.norm() >= 150);
-                lines.emplace_back(l);
-            }
-        }
+        unsigned int seed = dev();
+        std::cout << "Line generation seed: " << seed << std::endl;
+        std::vector<LineWrapper> lines = GenerateRandomLines(dev, seed, line_count, 100);
 
         auto tree = TreeBuilder<LineWrapper, &LineWrapper::l>::Build(lines.begin(), lines.end());
 
@@ -248,28 +228,11 @@ TEST(Tree, DISABLED_TestFindNearestHit_Random)
     unsigned int line_count = 100;
     unsigned int query_count = 100;
 
-    std::random_device dev {};
+    std::random_device dev{};
 
-    std::vector<LineWrapper> lines {};
-    {
-        lines.reserve(line_count);
-
-        unsigned int seed = dev();
-        std::cout << "Line generation seed: " << seed << std::endl;
-        std::default_random_engine rng {seed};
-        std::uniform_real_distribution<float> dist(0, 100);
-        for(int i = 0; i < line_count; ++i)
-        {
-            Line l(Vector3f::Zero(), Vector3f::Zero());
-            do {
-                l = Line::FromTwoPoints(
-                        Vector3f(dist(rng), dist(rng), dist(rng)),
-                        Vector3f(dist(rng), dist(rng), dist(rng))
-                );
-            }while(l.m.norm() >= 150);
-            lines.emplace_back(l);
-        }
-    }
+    unsigned int seed = dev();
+    std::cout << "Line generation seed: " << seed << std::endl;
+    std::vector<LineWrapper> lines = GenerateRandomLines(dev, seed, line_count, 100);
 
     auto tree = TreeBuilder<LineWrapper, &LineWrapper::l>::Build(lines.begin(), lines.end());
 

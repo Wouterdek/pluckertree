@@ -3,6 +3,7 @@
 #include <limits>
 #include <cstdint>
 #include <numeric>
+#include <memory>
 #include <Eigen/Dense>
 #include "MathUtil.h"
 
@@ -157,7 +158,8 @@ void iter_insert(Iterator position, Iterator end, const Value& val)
 
 constexpr float margin = 0;
 struct Diag {
-    static thread_local int visited;
+    static thread_local unsigned int visited;
+    static thread_local unsigned int minimizations;
 };
 
 template<class Content, class DistF, class OutputIt, typename = typename std::enable_if<std::is_same<const Content*, typename std::iterator_traits<OutputIt>::value_type>::value>::type>
@@ -427,6 +429,7 @@ public:
 	) const
     {
         Diag::visited = 0;
+        Diag::minimizations = 0;
 
         std::array<float, 32> minimumDistances {};
         std::array<Eigen::Vector3f, 32> moment_min_hints {};
@@ -480,6 +483,7 @@ public:
     ) const
     {
         Diag::visited = 0;
+        Diag::minimizations = 0;
 
         std::array<float, 32> minimumDistances {};
         std::array<Eigen::Vector3f, 32> moment_min_hints {};
@@ -520,7 +524,7 @@ public:
                     query_point, query_normal, out_first, out_last, max_dist, curBounds, moment_min_hints[idx], minimumDistances[idx]);
             nbResultsFound = std::min(nbResultsFound + nbResultsInNode, resultsListLength);
         }
-        std::cout << "visited " << Diag::visited << "/" << size() << std::endl;
+        //std::cout << "visited " << Diag::visited << "/" << size() << std::endl;
         return nbResultsFound;
     }
 };

@@ -405,6 +405,7 @@ public:
 	) const
     {
         Diag::visited = 0;
+        Diag::minimizations = 0;
 
         std::array<float, 32> minimumDistances {};
         std::array<Eigen::Vector3f, 32> moment_min_hints {};
@@ -458,6 +459,7 @@ public:
     ) const
     {
         Diag::visited = 0;
+        Diag::minimizations = 0;
 
         std::array<float, 32> minimumDistances {};
         std::array<Eigen::Vector3f, 32> moment_min_hints {};

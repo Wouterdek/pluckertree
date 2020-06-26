@@ -584,27 +584,35 @@ namespace pluckertree
         double minVal = 1E99;
         minHint = momentLowerBound;
         minVal = std::min(minVal, minimize(minHint));
+        Diag::minimizations++;
         if(minVal < 1e-3){ return minVal; } //TODO: this can be higher if the parent node has a higher min dist value
         minHint = momentUpperBound;
         minVal = std::min(minVal, minimize(minHint));
+        Diag::minimizations++;
         if(minVal < 1e-3){ return minVal; }
         minHint = Eigen::Vector3f(momentLowerBound.x(), momentLowerBound.y(), momentUpperBound.z());
         minVal = std::min(minVal, minimize(minHint));
+        Diag::minimizations++;
         if(minVal < 1e-3){ return minVal; }
         minHint = Eigen::Vector3f(momentLowerBound.x(), momentUpperBound.y(), momentLowerBound.z());
         minVal = std::min(minVal, minimize(minHint));
+        Diag::minimizations++;
         if(minVal < 1e-3){ return minVal; }
         minHint = Eigen::Vector3f(momentUpperBound.x(), momentLowerBound.y(), momentLowerBound.z());
         minVal = std::min(minVal, minimize(minHint));
+        Diag::minimizations++;
         if(minVal < 1e-3){ return minVal; }
         minHint = Eigen::Vector3f(momentLowerBound.x(), momentUpperBound.y(), momentUpperBound.z());
         minVal = std::min(minVal, minimize(minHint));
+        Diag::minimizations++;
         if(minVal < 1e-3){ return minVal; }
         minHint = Eigen::Vector3f(momentUpperBound.x(), momentUpperBound.y(), momentLowerBound.z());
         minVal = std::min(minVal, minimize(minHint));
+        Diag::minimizations++;
         if(minVal < 1e-3){ return minVal; }
         minHint = Eigen::Vector3f(momentUpperBound.x(), momentLowerBound.y(), momentUpperBound.z());
         minVal = std::min(minVal, minimize(minHint));
+        Diag::minimizations++;
         return minVal;
 
         /*// Set up parameters
@@ -687,27 +695,35 @@ namespace pluckertree
         double minVal = 1E99;
         minHint = momentLowerBound;
         minVal = std::min(minVal, minimize(minHint));
+        Diag::minimizations++;
         if(minVal < 1e-3){ return minVal; } //TODO: this can be higher if the parent node has a higher min dist value
         minHint = momentUpperBound;
         minVal = std::min(minVal, minimize(minHint));
+        Diag::minimizations++;
         if(minVal < 1e-3){ return minVal; }
         minHint = Eigen::Vector3f(momentLowerBound.x(), momentLowerBound.y(), momentUpperBound.z());
         minVal = std::min(minVal, minimize(minHint));
+        Diag::minimizations++;
         if(minVal < 1e-3){ return minVal; }
         minHint = Eigen::Vector3f(momentLowerBound.x(), momentUpperBound.y(), momentLowerBound.z());
         minVal = std::min(minVal, minimize(minHint));
+        Diag::minimizations++;
         if(minVal < 1e-3){ return minVal; }
         minHint = Eigen::Vector3f(momentUpperBound.x(), momentLowerBound.y(), momentLowerBound.z());
         minVal = std::min(minVal, minimize(minHint));
+        Diag::minimizations++;
         if(minVal < 1e-3){ return minVal; }
         minHint = Eigen::Vector3f(momentLowerBound.x(), momentUpperBound.y(), momentUpperBound.z());
         minVal = std::min(minVal, minimize(minHint));
+        Diag::minimizations++;
         if(minVal < 1e-3){ return minVal; }
         minHint = Eigen::Vector3f(momentUpperBound.x(), momentUpperBound.y(), momentLowerBound.z());
         minVal = std::min(minVal, minimize(minHint));
+        Diag::minimizations++;
         if(minVal < 1e-3){ return minVal; }
         minHint = Eigen::Vector3f(momentUpperBound.x(), momentLowerBound.y(), momentUpperBound.z());
         minVal = std::min(minVal, minimize(minHint));
+        Diag::minimizations++;
         return minVal;
     }
 
@@ -769,27 +785,35 @@ namespace pluckertree
         double minVal = 1E99;
         minHint = momentLowerBound;
         minVal = std::min(minVal, minimize(minHint));
+        Diag::minimizations++;
         if(minVal < 1e-3){ return minVal; } //TODO: this can be higher if the parent node has a higher min dist value
         minHint = momentUpperBound;
         minVal = std::min(minVal, minimize(minHint));
+        Diag::minimizations++;
         if(minVal < 1e-3){ return minVal; }
         minHint = Eigen::Vector3f(momentLowerBound.x(), momentLowerBound.y(), momentUpperBound.z());
         minVal = std::min(minVal, minimize(minHint));
+        Diag::minimizations++;
         if(minVal < 1e-3){ return minVal; }
         minHint = Eigen::Vector3f(momentLowerBound.x(), momentUpperBound.y(), momentLowerBound.z());
         minVal = std::min(minVal, minimize(minHint));
+        Diag::minimizations++;
         if(minVal < 1e-3){ return minVal; }
         minHint = Eigen::Vector3f(momentUpperBound.x(), momentLowerBound.y(), momentLowerBound.z());
         minVal = std::min(minVal, minimize(minHint));
+        Diag::minimizations++;
         if(minVal < 1e-3){ return minVal; }
         minHint = Eigen::Vector3f(momentLowerBound.x(), momentUpperBound.y(), momentUpperBound.z());
         minVal = std::min(minVal, minimize(minHint));
+        Diag::minimizations++;
         if(minVal < 1e-3){ return minVal; }
         minHint = Eigen::Vector3f(momentUpperBound.x(), momentUpperBound.y(), momentLowerBound.z());
         minVal = std::min(minVal, minimize(minHint));
+        Diag::minimizations++;
         if(minVal < 1e-3){ return minVal; }
         minHint = Eigen::Vector3f(momentUpperBound.x(), momentLowerBound.y(), momentUpperBound.z());
         minVal = std::min(minVal, minimize(minHint));
+        Diag::minimizations++;
         return minVal;
     }
 
@@ -810,7 +834,8 @@ namespace pluckertree
     }
 
 ///// POINTCLOUD EXPORT
-thread_local int pluckertree::Diag::visited = 0;
+thread_local unsigned int pluckertree::Diag::visited = 0;
+thread_local unsigned int pluckertree::Diag::minimizations = 0;
 
 struct GridPoint
 {
