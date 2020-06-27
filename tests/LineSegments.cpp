@@ -17,25 +17,15 @@ TEST(Tree, DISABLED_TestFindNeighbouringLineSegments_Random)
 
         std::random_device dev{};
 
-        unsigned int seed = dev();
-        std::cout << "Line segment generation seed: " << seed << std::endl;
-        std::vector<LineSegmentWrapper> lines = GenerateRandomLineSegments(dev, seed, line_count, 100, -100, 100);
+        unsigned int line_seed = dev();
+        std::cout << "Line segment generation seed: " << line_seed << std::endl;
+        auto lines = GenerateRandomLineSegments(line_seed, line_count, 100, -100, 100);
 
         auto tree = pluckertree::segments::TreeBuilder<LineSegmentWrapper, &LineSegmentWrapper::l>::Build(lines.begin(), lines.end());
 
-        std::vector<Vector3f> query_points{};
-        {
-            query_points.reserve(query_count);
-
-            unsigned int seed = dev();
-            std::cout << "Query generation seed: " << seed << std::endl;
-            std::default_random_engine rng{seed};
-            std::uniform_real_distribution<float> dist(0, 100);
-
-            for (int i = 0; i < query_count; ++i) {
-                query_points.emplace_back(dist(rng), dist(rng), dist(rng));
-            }
-        }
+        unsigned int query_seed = dev();
+        std::cout << "Query generation seed: " << query_seed << std::endl;
+        auto query_points = GenerateRandomPoints(query_seed, query_count, 100);
 
         std::array<const LineSegmentWrapper *, 1> result{nullptr};
 
@@ -125,7 +115,7 @@ TEST(Tree, DISABLED_TestFindNeighbouringLineSegments_Random)
     }
 }
 
-TEST(Tree, TestFindNearestHitLineSegments_Random)
+TEST(Tree, DISABLED_TestFindNearestHitLineSegments_Random)
 {
     for(int pass = 0; pass < 100; ++pass)
     {
@@ -134,28 +124,16 @@ TEST(Tree, TestFindNearestHitLineSegments_Random)
 
         std::random_device dev{};
 
-        unsigned int seed = dev();
-        std::cout << "Line segment generation seed: " << seed << std::endl;
-        std::vector<LineSegmentWrapper> lines = GenerateRandomLineSegments(dev, seed, line_count, 100, -100, 100);
+        unsigned int line_seed = dev();
+        std::cout << "Line segment generation seed: " << line_seed << std::endl;
+        auto lines = GenerateRandomLineSegments(line_seed, line_count, 100, -100, 100);
 
         auto tree = pluckertree::segments::TreeBuilder<LineSegmentWrapper, &LineSegmentWrapper::l>::Build(lines.begin(), lines.end());
 
-        std::vector<Vector3f> query_points {};
-        std::vector<Vector3f> query_point_normals {};
-        {
-            query_points.reserve(query_count);
-
-            unsigned int seed = dev();
-            std::cout << "Query generation seed: " << seed << std::endl;
-            std::default_random_engine rng{seed};
-            std::uniform_real_distribution<float> dist(0, 100);
-
-            for (int i = 0; i < query_count; ++i) {
-                query_points.emplace_back(dist(rng), dist(rng), dist(rng));
-                query_point_normals.emplace_back(dist(rng), dist(rng), dist(rng));
-                query_point_normals.back().normalize();
-            }
-        }
+        unsigned int query_seed = dev();
+        std::cout << "Query generation seed: " << query_seed << std::endl;
+        auto query_points = GenerateRandomPoints(query_seed, query_count, 100);
+        auto query_point_normals = GenerateRandomNormals(query_seed, query_count);
 
         std::array<const LineSegmentWrapper *, 1> result{nullptr};
 

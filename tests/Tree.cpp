@@ -90,50 +90,40 @@ TEST(Tree, TestFindNeighbours)
 
 TEST(Tree, DISABLED_TestFindNeighbours_1_Random)
 {
-    for(int pass = 0; pass < 100; ++pass)
+    for(int pass = 0; pass < 1; ++pass)
     {
-        unsigned int line_count = 100;
+        unsigned int line_count = 100000;
         unsigned int query_count = 100;
 
         std::random_device dev{};
 
-        unsigned int seed = dev();
-        std::cout << "Line generation seed: " << seed << std::endl;
-        std::vector<LineWrapper> lines = GenerateRandomLines(dev, seed, line_count, 100);
+        unsigned int line_seed = 2777538237;//dev();
+        std::cout << "Line generation seed: " << line_seed << std::endl;
+        std::vector<LineWrapper> lines = GenerateRandomLines(line_seed, line_count, 100);
 
         auto tree = TreeBuilder<LineWrapper, &LineWrapper::l>::Build(lines.begin(), lines.end());
 
-        std::vector<Vector3f> query_points{};
-        {
-            query_points.reserve(query_count);
-
-            unsigned int seed = dev();
-            std::cout << "Query generation seed: " << seed << std::endl;
-            std::default_random_engine rng{seed};
-            std::uniform_real_distribution<float> dist(0, 100);
-
-            for (int i = 0; i < query_count; ++i) {
-                query_points.emplace_back(dist(rng), dist(rng), dist(rng));
-            }
-        }
+        unsigned int query_seed = 544307922;//dev();
+        std::cout << "Query generation seed: " << query_seed << std::endl;
+        auto query_points = GenerateRandomPoints(query_seed, query_count, 100);
 
         std::array<const LineWrapper *, 1> result{nullptr};
 
         int i = 0;
         for (const auto &query : query_points) {
-            //if (i < 83) {
-            //    i++;
-            //    continue;
-            //}
-            if(i % 10 == 0)
+            if (i < 8) {
+                i++;
+                continue;
+            }
+            //if(i % 10 == 0)
             {
-                //std::cout << i << std::endl;
+                std::cout << i << std::endl;
             }
             //auto t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
             //std::cout << "i: " << i << ", " << std::ctime(&t) << std::endl;
             float result_dist = 1E99;
             auto nbResultsFound = tree.FindNeighbours(query, result.begin(), result.end(), result_dist);
-            //std::cout << "visited nodes: " << TreeNode::visited << std::endl;
+            std::cout << "visited nodes: " << Diag::visited << std::endl;
             EXPECT_EQ(nbResultsFound, 1);
 
             auto smallestLineIt = std::min_element(lines.begin(), lines.end(),
@@ -147,6 +137,7 @@ TEST(Tree, DISABLED_TestFindNeighbours_1_Random)
             Vector3f m_spher = cart2spherical(SmallestLine.m);
             std::vector<int> idx;
             int sectI = 0;
+            //std::cout << Diag::minimizations << std::endl;
             /*for (const auto &sector: tree.sectors) {
                 if (Eigen::AlignedBox<float, 3>(sector.bounds.m_start, sector.bounds.m_end).contains(
                         cart2spherical(SmallestLine.m))
@@ -230,30 +221,16 @@ TEST(Tree, DISABLED_TestFindNearestHit_Random)
 
     std::random_device dev{};
 
-    unsigned int seed = dev();
-    std::cout << "Line generation seed: " << seed << std::endl;
-    std::vector<LineWrapper> lines = GenerateRandomLines(dev, seed, line_count, 100);
+    unsigned int line_seed = dev();
+    std::cout << "Line generation seed: " << line_seed << std::endl;
+    std::vector<LineWrapper> lines = GenerateRandomLines(line_seed, line_count, 100);
 
     auto tree = TreeBuilder<LineWrapper, &LineWrapper::l>::Build(lines.begin(), lines.end());
 
-    std::vector<Vector3f> query_points {};
-    std::vector<Vector3f> query_point_normals {};
-    {
-        query_points.reserve(query_count);
-        query_point_normals.reserve(query_count);
-
-        unsigned int seed = dev();
-        std::cout << "Query generation seed: " << seed << std::endl;
-        std::default_random_engine rng {seed};
-        std::uniform_real_distribution<float> dist(0, 100);
-
-        for(int i = 0; i < query_count; ++i)
-        {
-            query_points.emplace_back(dist(rng), dist(rng), dist(rng));
-            query_point_normals.emplace_back(dist(rng), dist(rng), dist(rng));
-            query_point_normals.back().normalize();
-        }
-    }
+    unsigned int query_seed = dev();
+    std::cout << "Query generation seed: " << query_seed << std::endl;
+    auto query_points = GenerateRandomPoints(query_seed, query_count, 100);
+    auto query_point_normals = GenerateRandomNormals(query_seed, query_count);
 
     std::array<const LineWrapper*, 1> result { nullptr };
 
@@ -349,5 +326,46 @@ TEST(Tree, DISABLED_TestFindNearestHit_Random)
         i++;
     }
 
+    }
+}
+
+unsigned int CountNodes(const std::unique_ptr<TreeNode<LineWrapper, &LineWrapper::l>>& n)
+{
+    if(n == nullptr)
+    {
+        return 0;
+    }
+
+    auto c1 = CountNodes(n->children[0]);
+    auto c2 = CountNodes(n->children[1]);
+    return 1 + c1 + c2;
+};
+
+TEST(Tree, DISABLED_TreeSize_Random)
+{
+    for(int pass = 0; pass < 100; ++pass)
+    {
+        unsigned int line_count = 100000;
+
+        std::random_device dev{};
+
+        unsigned int line_seed = dev();
+
+        std::vector<LineWrapper> lines = GenerateRandomLines(line_seed, line_count, 100);
+
+        auto tree = TreeBuilder<LineWrapper, &LineWrapper::l>::Build(lines.begin(), lines.end());
+
+        unsigned int nodes = 0;
+        for(const auto& sector : tree.sectors)
+        {
+            nodes += CountNodes(sector.rootNode);
+        }
+
+        if(tree.size() != line_count || tree.size() != nodes)
+        {
+            std::cout << "Line generation seed: " << line_seed << std::endl;
+        }
+        EXPECT_EQ(tree.size(), line_count);
+        EXPECT_EQ(tree.size(), nodes);
     }
 }

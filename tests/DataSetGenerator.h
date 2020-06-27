@@ -21,8 +21,11 @@ struct LineSegmentWrapper
     explicit LineSegmentWrapper(LineSegment line) : l(std::move(line)) {}
 };
 
-std::vector<LineWrapper> GenerateRandomLines(std::random_device& dev, unsigned int seed, unsigned int lineCount, float maxDist);
-std::vector<LineWrapper> GenerateParallelLines(std::random_device& dev, unsigned int seed, unsigned int lineCount, float maxDist);
-std::vector<LineWrapper> GenerateEquiDistantLines(std::random_device& dev, unsigned int seed, unsigned int lineCount, float maxDist); //Equidistant from center
-std::vector<LineWrapper> GenerateEqualMomentLines(std::random_device& dev, unsigned int seed, unsigned int lineCount, float maxDist);
-std::vector<LineSegmentWrapper> GenerateRandomLineSegments(std::random_device& dev, unsigned int seed, unsigned int lineCount, float maxDist, float minT, float maxT);
+std::vector<LineWrapper> GenerateRandomLines(unsigned int seed, unsigned int lineCount, float maxDist);
+std::vector<LineWrapper> GenerateParallelLines(unsigned int seed, unsigned int lineCount, float maxDist);
+std::vector<LineWrapper> GenerateEquiDistantLines(unsigned int seed, unsigned int lineCount, float maxDist); //Equidistant from center
+std::vector<LineWrapper> GenerateEqualMomentLines(unsigned int seed, unsigned int lineCount, float maxDist);
+std::vector<LineSegmentWrapper> GenerateRandomLineSegments(unsigned int seed, unsigned int lineCount, float maxDist, float minT, float maxT);
+
+std::vector<Vector3f> GenerateRandomPoints(unsigned int seed, unsigned int pointCount, float maxDist);
+std::vector<Vector3f> GenerateRandomNormals(unsigned int seed, unsigned int normalCount);

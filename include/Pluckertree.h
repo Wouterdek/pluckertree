@@ -198,7 +198,6 @@ public:
     uint8_t bound_component_idx : 2;
     //uint8_t pad1 : 6;
     //uint8_t pad2[7];
-    static thread_local int visited;
 
     TreeNode(uint8_t bound_component_idx, float m_component, Content content)
         : type(NodeType::moment), bound_component_idx(bound_component_idx), m_component(m_component), content(std::move(content)), children() {}

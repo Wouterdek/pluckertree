@@ -1,6 +1,6 @@
 #include "DataSetGenerator.h"
 
-std::vector<LineWrapper> GenerateRandomLines(std::random_device& dev, unsigned int seed, unsigned int lineCount, float maxDist)
+std::vector<LineWrapper> GenerateRandomLines(unsigned int seed, unsigned int lineCount, float maxDist)
 {
     std::vector<LineWrapper> lines{};
     lines.reserve(lineCount);
@@ -20,7 +20,7 @@ std::vector<LineWrapper> GenerateRandomLines(std::random_device& dev, unsigned i
     return lines;
 }
 
-std::vector<LineWrapper> GenerateParallelLines(std::random_device& dev, unsigned int seed, unsigned int lineCount, float maxDist, const Vector3f& direction)
+std::vector<LineWrapper> GenerateParallelLines(unsigned int seed, unsigned int lineCount, float maxDist, const Vector3f& direction)
 {
     std::vector<LineWrapper> lines{};
     lines.reserve(lineCount);
@@ -40,7 +40,7 @@ std::vector<LineWrapper> GenerateParallelLines(std::random_device& dev, unsigned
     return lines;
 }
 
-std::vector<LineWrapper> GenerateEquiDistantLines(std::random_device& dev, unsigned int seed, unsigned int lineCount, float distance)
+std::vector<LineWrapper> GenerateEquiDistantLines(unsigned int seed, unsigned int lineCount, float distance)
 {
     std::vector<LineWrapper> lines{};
     lines.reserve(lineCount);
@@ -58,7 +58,7 @@ std::vector<LineWrapper> GenerateEquiDistantLines(std::random_device& dev, unsig
     return lines;
 }
 
-std::vector<LineWrapper> GenerateEqualMomentLines(std::random_device& dev, unsigned int seed, unsigned int lineCount, const Vector3f& moment)
+std::vector<LineWrapper> GenerateEqualMomentLines(unsigned int seed, unsigned int lineCount, const Vector3f& moment)
 {
     std::vector<LineWrapper> lines{};
     lines.reserve(lineCount);
@@ -73,14 +73,14 @@ std::vector<LineWrapper> GenerateEqualMomentLines(std::random_device& dev, unsig
     Vector3f baseV = baseU.cross(moment_d);
 
     for (int i = 0; i < lineCount; ++i) {
-        float angle = unitDist(dev) * 2.0f * M_PI;
+        float angle = unitDist(rng) * 2.0f * M_PI;
         Vector3f d = std::sin(angle) * baseU + std::cos(angle) * baseV;
         lines.emplace_back(Line(d, moment));
     }
     return lines;
 }
 
-std::vector<LineSegmentWrapper> GenerateRandomLineSegments(std::random_device& dev, unsigned int seed, unsigned int lineCount, float maxDist, float minT, float maxT)
+std::vector<LineSegmentWrapper> GenerateRandomLineSegments(unsigned int seed, unsigned int lineCount, float maxDist, float minT, float maxT)
 {
     std::vector<LineSegmentWrapper> lines{};
     lines.reserve(lineCount);
@@ -107,4 +107,34 @@ std::vector<LineSegmentWrapper> GenerateRandomLineSegments(std::random_device& d
     }
 
     return lines;
+}
+
+std::vector<Vector3f> GenerateRandomPoints(unsigned int seed, unsigned int pointCount, float maxDist)
+{
+    std::vector<Vector3f> queryPoints{};
+    queryPoints.reserve(pointCount);
+    std::default_random_engine rng{seed};
+    std::uniform_real_distribution<float> dist(0, maxDist);
+
+    for (int query_i = 0; query_i < pointCount; ++query_i) {
+        queryPoints.emplace_back(dist(rng), dist(rng), dist(rng));
+    }
+    return queryPoints;
+}
+
+std::vector<Vector3f> GenerateRandomNormals(unsigned int seed, unsigned int normalCount)
+{
+    std::vector<Vector3f> query_point_normals {};
+    query_point_normals.reserve(normalCount);
+
+    std::default_random_engine rng {seed+1};
+    std::uniform_real_distribution<float> dist(0, 1);
+
+    for(int i = 0; i < normalCount; ++i)
+    {
+        query_point_normals.emplace_back(dist(rng), dist(rng), dist(rng));
+        query_point_normals.back().normalize();
+    }
+
+    return query_point_normals;
 }
