@@ -496,7 +496,7 @@ public:
             } else
             {
                 moment_min_hints[i] = sector.bounds.m_start + (sector.bounds.m_end - sector.bounds.m_start)/2;
-                minimumDistances[i] = FindMinDist(query_point, sector.bounds.d_bound_1, sector.bounds.d_bound_2, sector.bounds.m_start, sector.bounds.m_end, moment_min_hints[i]);
+                minimumDistances[i] = FindMinHitDist(query_point, query_normal, sector.bounds.d_bound_1, sector.bounds.d_bound_2, sector.bounds.m_start, sector.bounds.m_end, moment_min_hints[i]);
             }
         }
 
