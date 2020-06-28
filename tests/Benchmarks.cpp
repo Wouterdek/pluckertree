@@ -26,6 +26,7 @@ void parallel_for(size_type arr_size, std::function<void(size_type)> f)
         batchSize = 1;
         batchRemainder = 0;
         batchRemainderBegin = arr_size;
+        threadCount = arr_size;
     } else {
         batchSize = arr_size / threadCount;
         batchRemainder = arr_size % threadCount;
@@ -33,14 +34,14 @@ void parallel_for(size_type arr_size, std::function<void(size_type)> f)
     }
 
     std::vector<std::thread> threads {};
-    for(size_type i = 0; i < arr_size; i += batchSize)
+    for(size_type i = 0; i < threadCount; ++i)
     {
         threads.emplace_back([&f](size_type begin, size_type end){
             for(auto cur = begin; cur < end; ++cur)
             {
                 f(cur);
             }
-        }, i, i+batchSize);
+        }, i*batchSize, (i+1)*batchSize);
     }
 
     for(auto cur = batchRemainderBegin; cur < arr_size; ++cur)
