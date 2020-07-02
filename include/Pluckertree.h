@@ -160,6 +160,18 @@ constexpr float margin = 0;
 struct Diag {
     static thread_local unsigned int visited;
     static thread_local unsigned int minimizations;
+    static std::optional<std::function<void(float best_so_far_dist, float cur_line_dist, float cur_node_mindist, int cur_depth)>> on_node_visited;
+    static std::optional<std::function<void(float best_so_far_dist, float cur_node_mindist, int cur_depth)>> on_node_enter;
+    static std::optional<std::function<void(float best_so_far_dist, float cur_line_dist, float cur_node_mindist, int cur_depth)>> on_node_leave;
+    static bool force_visit_all;
+
+    static void reset()
+    {
+        visited = 0;
+        minimizations = 0;
+        on_node_visited = std::nullopt;
+        force_visit_all = false;
+    }
 };
 
 template<class Content, class DistF, class OutputIt, typename = typename std::enable_if<std::is_same<const Content*, typename std::iterator_traits<OutputIt>::value_type>::value>::type>
@@ -213,9 +225,15 @@ public:
             float& max_dist,
             const Bounds& bounds,
             const Eigen::Vector3f& moment_min_hint,
+            int depth,
             float moment_min_hint_dist
     ) const
     {
+        if(Diag::on_node_enter.has_value())
+        {
+            (*Diag::on_node_enter)(max_dist, moment_min_hint_dist, depth);
+        }
+
         Diag::visited++;
         std::array<float, 2> minimumDistances {};
         std::array<Bounds, 2> childBounds {};
@@ -277,12 +295,12 @@ public:
         auto resultsListLength = std::distance(out_first, out_last);
         for(uint8_t idx : permutation)
         {
-            if(minimumDistances[idx] > max_dist+margin || children[idx] == nullptr) //max_dist_check
+            if((minimumDistances[idx] > max_dist+margin && !Diag::force_visit_all) || children[idx] == nullptr) //max_dist_check
             {
                 break;
             }
 
-            auto nbResultsInNode = children[idx]->FindNeighbours(query_point, out_first, out_last, max_dist, childBounds[idx], childMomentMinima[idx], minimumDistances[idx]);
+            auto nbResultsInNode = children[idx]->FindNeighbours(query_point, out_first, out_last, max_dist, childBounds[idx], childMomentMinima[idx], depth+1, minimumDistances[idx]);
             nbResultsFound = std::min(nbResultsFound + nbResultsInNode, resultsListLength);
         }
 
@@ -294,10 +312,21 @@ public:
         };
 
         auto dist = distF(&content, query_point).norm();
+
+        if(Diag::on_node_visited.has_value())
+        {
+            (*Diag::on_node_visited)(max_dist, dist, moment_min_hint_dist, depth);
+        }
+
         if(dist < max_dist+margin) //max_dist_check
         {
             max_dist = insert(&content, out_first, out_last, query_point, distF);
             nbResultsFound++;
+        }
+
+        if(Diag::on_node_leave.has_value())
+        {
+            (*Diag::on_node_leave)(max_dist, dist, moment_min_hint_dist, depth);
         }
 
         return nbResultsFound;
@@ -311,6 +340,7 @@ public:
             float& max_dist,
             const Bounds& bounds,
             const Eigen::Vector3f& moment_min_hint,
+            int depth,
             float moment_min_hint_dist
     ) const
     {
@@ -375,12 +405,12 @@ public:
         auto resultsListLength = std::distance(out_first, out_last);
         for(uint8_t idx : permutation)
         {
-            if(minimumDistances[idx] > max_dist+margin || children[idx] == nullptr) //max_dist_check
+            if((minimumDistances[idx] > max_dist+margin && !Diag::force_visit_all) || children[idx] == nullptr) //max_dist_check
             {
                 break;
             }
 
-            auto nbResultsInNode = children[idx]->FindNearestHits(query_point, query_normal, out_first, out_last, max_dist, childBounds[idx], childMomentMinima[idx], minimumDistances[idx]);
+            auto nbResultsInNode = children[idx]->FindNearestHits(query_point, query_normal, out_first, out_last, max_dist, childBounds[idx], childMomentMinima[idx], depth+1, minimumDistances[idx]);
             nbResultsFound = std::min(nbResultsFound + nbResultsInNode, resultsListLength);
         }
 
@@ -393,6 +423,10 @@ public:
             return vect;
         };
         auto dist = distF(&content, query_point).norm();
+        if(Diag::on_node_visited.has_value())
+        {
+            (*Diag::on_node_visited)(max_dist, dist, moment_min_hint_dist, depth);
+        }
         if(dist < max_dist+margin) //max_dist_check
         {
             max_dist = insert(&content, out_first, out_last, query_point, distF);
@@ -459,14 +493,14 @@ public:
         auto resultsListLength = std::distance(out_first, out_last);
         for(uint8_t idx : permutation)
         {
-            if(minimumDistances[idx] > max_dist+margin || sectors[idx].rootNode == nullptr) //max_dist_check
+            if((minimumDistances[idx] > max_dist+margin && !Diag::force_visit_all) || sectors[idx].rootNode == nullptr) //max_dist_check
             {
                 break;
             }
 
             const auto& curBounds = sectors[idx].bounds;
             auto nbResultsInNode = sectors[idx].rootNode->FindNeighbours(
-                    query_point, out_first, out_last, max_dist, curBounds, moment_min_hints[idx], minimumDistances[idx]);
+                    query_point, out_first, out_last, max_dist, curBounds, moment_min_hints[idx], 0, minimumDistances[idx]);
             nbResultsFound = std::min(nbResultsFound + nbResultsInNode, resultsListLength);
         }
         //std::cout << "visited " << Diag::visited << "/" << size() << std::endl;
@@ -513,14 +547,14 @@ public:
         auto resultsListLength = std::distance(out_first, out_last);
         for(uint8_t idx : permutation)
         {
-            if(minimumDistances[idx] > max_dist+margin || sectors[idx].rootNode == nullptr) //max_dist_check
+            if((minimumDistances[idx] > max_dist+margin && !Diag::force_visit_all) || sectors[idx].rootNode == nullptr) //max_dist_check
             {
                 break;
             }
 
             const auto& curBounds = sectors[idx].bounds;
             auto nbResultsInNode = sectors[idx].rootNode->FindNearestHits(
-                    query_point, query_normal, out_first, out_last, max_dist, curBounds, moment_min_hints[idx], minimumDistances[idx]);
+                    query_point, query_normal, out_first, out_last, max_dist, curBounds, moment_min_hints[idx], 0, minimumDistances[idx]);
             nbResultsFound = std::min(nbResultsFound + nbResultsInNode, resultsListLength);
         }
         //std::cout << "visited " << Diag::visited << "/" << size() << std::endl;

@@ -836,6 +836,10 @@ namespace pluckertree
 ///// POINTCLOUD EXPORT
 thread_local unsigned int pluckertree::Diag::visited = 0;
 thread_local unsigned int pluckertree::Diag::minimizations = 0;
+std::optional<std::function<void(float, float, float, int)>> pluckertree::Diag::on_node_visited;
+std::optional<std::function<void(float, float, int)>> pluckertree::Diag::on_node_enter;
+std::optional<std::function<void(float, float, float, int)>> pluckertree::Diag::on_node_leave;
+bool pluckertree::Diag::force_visit_all = false;
 
 struct GridPoint
 {
