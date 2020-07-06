@@ -6,7 +6,8 @@
 #include <memory>
 #include <Eigen/Dense>
 #include "MathUtil.h"
-
+#include <random>
+#include <iostream>
 namespace pluckertree
 {
 
@@ -163,6 +164,7 @@ struct Diag {
     static std::optional<std::function<void(float best_so_far_dist, float cur_line_dist, float cur_node_mindist, int cur_depth)>> on_node_visited;
     static std::optional<std::function<void(float best_so_far_dist, float cur_node_mindist, int cur_depth)>> on_node_enter;
     static std::optional<std::function<void(float best_so_far_dist, float cur_line_dist, float cur_node_mindist, int cur_depth)>> on_node_leave;
+    static std::optional<std::function<void(float m_phi_var, float m_gamma_var, float m_radius_var, float d_var)>> on_build_variance_calculated;
     static bool force_visit_all;
 
     static void reset()
@@ -170,6 +172,9 @@ struct Diag {
         visited = 0;
         minimizations = 0;
         on_node_visited = std::nullopt;
+        on_node_enter = std::nullopt;
+        on_node_leave = std::nullopt;
+        on_build_variance_calculated = std::nullopt;
         force_visit_all = false;
     }
 };
@@ -437,6 +442,7 @@ public:
     }
 };
 
+
 template<typename Content, Line Content::*line_member>
 class Tree
 {
@@ -562,6 +568,9 @@ public:
     }
 };
 
+struct MyRand{
+    static std::random_device rand_dev;
+};
 
 template<class Content, Line Content::*line_member>
 class TreeBuilder
@@ -583,17 +592,35 @@ private:
         std::unique_ptr<Node> node;
         //NodeType type;
         uint8_t splitComponent = 0;
-        LineIt pivot;
         Bounds subBounds1 = bounds;
         Bounds subBounds2 = bounds;
+        LineIt pivot;
+        std::uniform_real_distribution<float> unit{0.0f, 1.0f};
+        float v = unit(MyRand::rand_dev);
 
         // Calculate max moment variance
-        Eigen::Array3f mVarianceVect = calc_vec3_variance(lines_begin, lines_end, [](const Content& c){return cart2spherical((c.*line_member).m); });
+#define M_RANDOM
+#if defined(M_MAX_VAR) || defined(M_MIN_VAR)
+        Eigen::Array3f mVarianceVect = calc_vec3_pop_variance(lines_begin, lines_end, [](const Content& c){return cart2spherical((c.*line_member).m); });
         Eigen::Array3f mVarianceNormFact = (bounds.m_end - bounds.m_start).array();
         mVarianceNormFact = mVarianceNormFact * mVarianceNormFact;
-        mVarianceNormFact /= 4;
         mVarianceVect = mVarianceVect.cwiseQuotient(mVarianceNormFact);
+    #if defined(M_MAX_VAR)
         auto mVariance = mVarianceVect.maxCoeff(&splitComponent);
+    #elif defined(M_MIN_VAR)
+        auto mVariance = mVarianceVect.minCoeff(&splitComponent);
+    #endif
+#elif defined(M_RANDOM)
+        if(v < 0.37)
+        {
+            splitComponent = 0;
+        }else if(v < 0.65)
+        {
+            splitComponent = 1;
+        }else{
+            splitComponent = 2;
+        }
+#endif
 
         // Calculate directional variance
         // project direction vectors to bound domain, calculate variance of sine of angle to bound, and use this to decide NodeType
@@ -613,15 +640,24 @@ private:
             }
             return sin;
         };
-        auto dVariance = calc_variance(lines_begin, lines_end, [&bound_domain_normal, &cur_bound, calc_sine](const Content& c){
+        /*auto dVariance = calc_pop_variance(lines_begin, lines_end, [&bound_domain_normal, &cur_bound, calc_sine](const Content& c){
             const auto& line = c.*line_member;
-            return calc_sine(line.d, bound_domain_normal, cur_bound);
+            return std::asin(calc_sine(line.d, bound_domain_normal, cur_bound));
         });
         auto dMaxSin = bounds.d_bound_1.cross(bounds.d_bound_2).norm();
-        auto dMaxPossibleVariance = (dMaxSin * dMaxSin)/4; //Assumes angle between bounds >= 90°
-        auto dVarianceNormalized = dVariance / dMaxPossibleVariance;
+        //auto dMaxPossibleVariance = (dMaxSin * dMaxSin)/4; //Assumes angle between bounds >= 90°
+        //auto dVarianceNormalized = dVariance / dMaxPossibleVariance;
+        auto dVarianceNormFactor = std::asin(dMaxSin);
+        dVarianceNormFactor = dVarianceNormFactor * dVarianceNormFactor;
+        auto dVarianceNormalized = dVariance;
+        if(Diag::on_build_variance_calculated.has_value())
+        {
+            Diag::on_build_variance_calculated.value()(mVarianceVect.x(), mVarianceVect.y(), mVarianceVect.z(), dVarianceNormalized);
+        }*/
 
-        if(dVarianceNormalized > mVariance)
+        //if(dVarianceNormalized > mVariance)
+
+        if(v < 0.25)
         {
             // calculate new bound vector: calc cross product of dir vectors with cur bound vector to obtain sin,
             // sort by sin, take median, new bound vector is cross product of bound_domain_normal with median dir vect
@@ -646,12 +682,94 @@ private:
             node = std::make_unique<Node>(dir_bound, *pivot);
         } else
         {
+#if defined(M_VOLUME_HEURISTIC)
+            unsigned int cur_best_dim_i = 0;
+            unsigned int cur_best_i = 0;
+            float cur_best_h = 1E99;
+
+            for(int dim_i = 0; dim_i < 3; ++dim_i)
+            {
+                std::sort(lines_begin, lines_end, [splitComponent](const Content& c1, const Content& c2){
+                    const auto& l1 = c1.*line_member;
+                    const auto& l2 = c2.*line_member;
+                    return cart2spherical(l1.m)[splitComponent] < cart2spherical(l2.m)[splitComponent];
+                });
+
+                for(unsigned int i = 1; i < lineCount-1; ++i)
+                {
+                    const Line& l1 = (*(lines_begin+i-1)).*line_member;
+                    const Line& l2 = (*(lines_begin+i+1)).*line_member;
+                    subBounds1.m_end[dim_i] = cart2spherical(l1.m)[dim_i];
+                    subBounds2.m_start[dim_i] = cart2spherical(l2.m)[dim_i];
+
+                    float vol1;
+                    {
+                        float r1 = subBounds1.m_start.z();
+                        float r2 = subBounds1.m_end.z();
+                        vol1 = (((r2*r2*r2) - (r1*r1*r1))/2.0f) * (-std::cos(subBounds1.m_end.y()) + std::cos(subBounds1.m_start.y())) * (subBounds1.m_end.x() - subBounds1.m_start.x());
+                    }
+
+                    float vol2;
+                    {
+                        float r1 = subBounds2.m_start.z();
+                        float r2 = subBounds2.m_end.z();
+                        vol2 = (((r2*r2*r2) - (r1*r1*r1))/2.0f) * (-std::cos(subBounds2.m_end.y()) + std::cos(subBounds2.m_start.y())) * (subBounds2.m_end.x() - subBounds2.m_start.x());
+                    }
+                    //float heuristic = (vol1 * i) + (vol2 * (lineCount - i - 1));
+                    float heuristic = (vol1) + (vol2);
+
+                    if(heuristic < cur_best_h)
+                    {
+                        cur_best_h = heuristic;
+                        cur_best_dim_i = dim_i;
+                        cur_best_i = i;
+                    }
+                }
+                subBounds1.m_end[dim_i] = bounds.m_end[dim_i];
+                subBounds2.m_start[dim_i] = bounds.m_start[dim_i];
+            }
+            splitComponent = cur_best_dim_i;
+            unsigned int pivot_i = cur_best_i;
+#elif defined(M_LONGEST_DIST)
+            unsigned int cur_best_dim_i = 0;
+            unsigned int cur_best_i = 0;
+            float cur_best_h = 0;
+
+            for(int dim_i = 0; dim_i < 3; ++dim_i)
+            {
+                std::sort(lines_begin, lines_end, [splitComponent](const Content& c1, const Content& c2){
+                    const auto& l1 = c1.*line_member;
+                    const auto& l2 = c2.*line_member;
+                    return cart2spherical(l1.m)[splitComponent] < cart2spherical(l2.m)[splitComponent];
+                });
+
+                for(unsigned int i = 1; i < lineCount-1; ++i)
+                {
+                    const Line& l1 = (*(lines_begin+i-1)).*line_member;
+                    const Line& l2 = (*(lines_begin+i+1)).*line_member;
+
+                    float heuristic = ((cart2spherical(l2.m)[dim_i]) - (cart2spherical(l1.m)[dim_i]))/(bounds.m_end[dim_i] - bounds.m_start[dim_i]);
+
+                    if(heuristic > cur_best_h)
+                    {
+                        cur_best_h = heuristic;
+                        cur_best_dim_i = dim_i;
+                        cur_best_i = i;
+                    }
+                }
+            }
+            splitComponent = cur_best_dim_i;
+            unsigned int pivot_i = cur_best_i;
+#else
+            unsigned int pivot_i = lineCount/2;
+#endif
             std::sort(lines_begin, lines_end, [splitComponent](const Content& c1, const Content& c2){
                 const auto& l1 = c1.*line_member;
                 const auto& l2 = c2.*line_member;
                 return cart2spherical(l1.m)[splitComponent] < cart2spherical(l2.m)[splitComponent];
             });
-            pivot = lines_begin + (lines_end - lines_begin)/2;
+            pivot = lines_begin + pivot_i;
+
             const auto& pivotLine = (*pivot).*line_member;
             auto splitCompVal = cart2spherical(pivotLine.m)[splitComponent];
             subBounds1.m_end[splitComponent] = splitCompVal;

@@ -539,7 +539,8 @@ namespace pluckertree
     )
     {
         auto minimize = [point,dirLowerBound,dirUpperBound,momentLowerBound,momentUpperBound](Eigen::Vector3f& minimum){
-            nlopt::opt opt(nlopt::LN_COBYLA, 3);//LN_NELDERMEAD, LN_SBPLX
+            //nlopt::opt opt(nlopt::LN_COBYLA, 3);//LN_NELDERMEAD, LN_SBPLX
+            nlopt::opt opt(nlopt::LN_SBPLX, 3);//LN_NELDERMEAD, LN_SBPLX
 
             std::vector<double> lb(momentLowerBound.data(), momentLowerBound.data() + momentLowerBound.rows() * momentLowerBound.cols());
             opt.set_lower_bounds(lb);
@@ -650,7 +651,8 @@ namespace pluckertree
     )
     {
         auto minimize = [point,point_normal,dirLowerBound,dirUpperBound,momentLowerBound,momentUpperBound](Eigen::Vector3f& minimum){
-            nlopt::opt opt(nlopt::LN_COBYLA, 3);//LN_NELDERMEAD, LN_SBPLX
+            //nlopt::opt opt(nlopt::LN_COBYLA, 3);//LN_NELDERMEAD, LN_SBPLX
+            nlopt::opt opt(nlopt::LN_SBPLX, 3);//LN_NELDERMEAD, LN_SBPLX
 
             std::vector<double> lb(momentLowerBound.data(), momentLowerBound.data() + momentLowerBound.rows() * momentLowerBound.cols());
             opt.set_lower_bounds(lb);
@@ -839,7 +841,10 @@ thread_local unsigned int pluckertree::Diag::minimizations = 0;
 std::optional<std::function<void(float, float, float, int)>> pluckertree::Diag::on_node_visited;
 std::optional<std::function<void(float, float, int)>> pluckertree::Diag::on_node_enter;
 std::optional<std::function<void(float, float, float, int)>> pluckertree::Diag::on_node_leave;
+std::optional<std::function<void(float, float, float, float)>> pluckertree::Diag::on_build_variance_calculated;
 bool pluckertree::Diag::force_visit_all = false;
+
+std::random_device pluckertree::MyRand::rand_dev;
 
 struct GridPoint
 {

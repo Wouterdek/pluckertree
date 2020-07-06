@@ -57,7 +57,7 @@ void parallel_for(size_type arr_size, std::function<void(size_type)> f)
 
 TEST(Benchmarks, DISABLED_NearestNeighbour_Lines_Random)
 {
-    std::fstream out(output_path+"NearestNeighbour_Lines_Random1.txt", std::fstream::out | std::fstream::app);
+    std::fstream out(output_path+"NearestNeighbour_Lines_Random.txt", std::fstream::out | std::fstream::app);
     if(out.fail())
     {
         std::cerr << "Failed to open file" << std::endl;
@@ -1038,7 +1038,7 @@ TEST(Benchmarks, DISABLED_NearestNeighbour_Lines_Dist_Tightness)
     Diag::reset();
 }
 
-TEST(Benchmarks, NearestNeighbour_Lines_Random_SplitTypes)
+TEST(Benchmarks, DISABLED_NearestNeighbour_Lines_Random_SplitTypes)
 {
     std::fstream out(output_path+"NearestNeighbour_Lines_Random_SplitTypes.txt", std::fstream::out | std::fstream::app);
     if(out.fail())
@@ -1114,4 +1114,58 @@ TEST(Benchmarks, NearestNeighbour_Lines_Random_SplitTypes)
 
     out.flush();
     out.close();
+}
+
+TEST(Benchmarks, DISABLED_NearestNeighbour_Lines_Random_Build_Variances)
+{
+    std::fstream out(output_path+"NearestNeighbour_Lines_Random_Build_Variances.txt", std::fstream::out | std::fstream::app);
+    if(out.fail())
+    {
+        std::cerr << "Failed to open file" << std::endl;
+        return;
+    }
+
+    unsigned int line_count = 100000;
+
+    {
+        out << "BENCH INFO" << std::endl;
+        unsigned int iteration_count = 1;
+        float max_dist = 100;
+
+        out << "Line count: " << line_count << std::endl;
+        out << "Iteration count: " << iteration_count << std::endl;
+        out << "Maximum distance: " << max_dist << std::endl;
+
+        Diag::on_build_variance_calculated = [&out](float m_phi_var, float m_gamma_var, float m_radius_var, float d_var){
+            out << m_phi_var << ";" << m_gamma_var << ";" << m_radius_var << ";" << d_var << std::endl;
+        };
+
+        out << "START BENCH" << std::endl;
+        for(int i = 0; i < iteration_count; ++i)
+        {
+            std::cout << "Iteration " << (i+1) << " of " << iteration_count << std::endl;
+            unsigned int line_seed;
+            {
+                std::random_device dev{};
+                line_seed = dev();
+            }
+
+            out << "Line generation seed: " << line_seed << std::endl;
+
+            //Generate lines and tree
+            std::cout << "Generating lines & tree\r";
+            std::vector<LineWrapper> lines = GenerateRandomLines(line_seed, line_count, max_dist);
+
+            out << "START DATA" << std::endl;
+            auto tree = TreeBuilder<LineWrapper, &LineWrapper::l>::Build(lines.begin(), lines.end());
+            out << "END DATA" << std::endl;
+            out.flush();
+        }
+        out << "END BENCH" << std::endl << std::endl;
+    }
+
+    out.flush();
+    out.close();
+
+    Diag::reset();
 }

@@ -22,7 +22,7 @@ auto cart2spherical(const Vector3_t& p)
 }
 
 template<typename Iter, typename Accessor>
-float calc_variance(Iter begin, Iter end, Accessor f)
+float calc_pop_variance(Iter begin, Iter end, Accessor f)
 {
     float total = 0;
     for(auto it = begin; it < end; ++it)
@@ -39,13 +39,13 @@ float calc_variance(Iter begin, Iter end, Accessor f)
         float cur = f(*it) - avg;
         variance += cur * cur;
     }
-    variance /= (elemCount - 1);
+    variance /= elemCount;
 
     return variance;
 }
 
 template<typename Iter, typename Accessor>
-Eigen::Array3f calc_vec3_variance(Iter begin, Iter end, Accessor f)
+Eigen::Array3f calc_vec3_pop_variance(Iter begin, Iter end, Accessor f)
 {
     Eigen::Array3f total(0, 0, 0);
     for(auto it = begin; it < end; ++it)
@@ -53,7 +53,8 @@ Eigen::Array3f calc_vec3_variance(Iter begin, Iter end, Accessor f)
         total += f(*it).array();
     }
 
-    Eigen::Array3f avg = total / std::distance(begin, end);
+    auto elemCount = std::distance(begin, end);
+    Eigen::Array3f avg = total / elemCount;
 
     Eigen::Array3f variance(0, 0, 0);
     for(auto it = begin; it < end; ++it)
@@ -61,7 +62,7 @@ Eigen::Array3f calc_vec3_variance(Iter begin, Iter end, Accessor f)
         Eigen::Array3f cur = f(*it).array() - avg;
         variance += cur * cur;
     }
-    variance /= (std::distance(begin, end) - 1);
+    variance /= elemCount;
 
     return variance;
 }

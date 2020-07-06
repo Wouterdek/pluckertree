@@ -537,7 +537,7 @@ private:
         Bounds subBounds2 = bounds;
 
         // Calculate max moment variance
-        Eigen::Array3f mVarianceVect = calc_vec3_variance(lines_begin, lines_end, [](const Content& c){return cart2spherical((c.*line_member).l.m); });
+        Eigen::Array3f mVarianceVect = calc_vec3_pop_variance(lines_begin, lines_end, [](const Content& c){return cart2spherical((c.*line_member).l.m); });
         Eigen::Array3f mVarianceNormFact = (bounds.m_end - bounds.m_start).array();
         mVarianceNormFact = mVarianceNormFact * mVarianceNormFact;
         mVarianceNormFact /= 4;
@@ -562,7 +562,7 @@ private:
             }
             return sin;
         };
-        auto dVariance = calc_variance(lines_begin, lines_end, [&bound_domain_normal, &cur_bound, calc_sine](const Content& c){
+        auto dVariance = calc_pop_variance(lines_begin, lines_end, [&bound_domain_normal, &cur_bound, calc_sine](const Content& c){
             const auto& line = (c.*line_member).l;
             return calc_sine(line.d, bound_domain_normal, cur_bound);
         });
@@ -571,8 +571,8 @@ private:
         auto dVarianceNormalized = dVariance / dMaxPossibleVariance;
 
         // Calculate t variance
-        auto t1Var = calc_variance(lines_begin, lines_end, [](const Content& c){ return (c.*line_member).t1; });
-        auto t2Var = calc_variance(lines_begin, lines_end, [](const Content& c){ return (c.*line_member).t2; });
+        auto t1Var = calc_pop_variance(lines_begin, lines_end, [](const Content& c){ return (c.*line_member).t1; });
+        auto t2Var = calc_pop_variance(lines_begin, lines_end, [](const Content& c){ return (c.*line_member).t2; });
         auto tBoundDist = bounds.t2Max - bounds.t1Min;
         auto tVarNormalized = (t1Var+t2Var)*2 / (tBoundDist * tBoundDist); // ((t1Var+t2Var)/2)/(tBoundDist * tBoundDist)/4;
 
