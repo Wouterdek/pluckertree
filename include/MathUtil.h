@@ -22,6 +22,24 @@ auto cart2spherical(const Vector3_t& p)
 }
 
 template<typename Iter, typename Accessor>
+float calc_MAD(Iter begin, Iter end, Accessor f)
+{
+    std::sort(begin, end, [&f](const auto& v1, const auto& v2){
+        return f(v1) < f(v2);
+    });
+
+    auto median = f(*(begin + ((end - begin)/2)));
+
+    std::sort(begin, end, [&f, median](const auto& v1, const auto& v2){
+        return std::abs(f(v1) - median) < std::abs(f(v2) - median);
+    });
+
+    auto mad = f(*(begin + ((end - begin)/2)));
+
+    return mad;
+}
+
+template<typename Iter, typename Accessor>
 float calc_pop_variance(Iter begin, Iter end, Accessor f)
 {
     float total = 0;
@@ -66,3 +84,4 @@ Eigen::Array3f calc_vec3_pop_variance(Iter begin, Iter end, Accessor f)
 
     return variance;
 }
+

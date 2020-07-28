@@ -1079,11 +1079,12 @@ TEST(Benchmarks, DISABLED_NearestNeighbour_Lines_Random_SplitTypes)
             //Perform queries
             out << "START DATA" << std::endl;
             std::cout << "Running queries        \r";
+
             std::array<unsigned int, 3> moment_splits {0, 0, 0};
             unsigned int directional_splits = 0;
             std::function<void(const TreeNode<LineWrapper, &LineWrapper::l>*)> visitor;
             visitor = std::function([&visitor, &moment_splits, &directional_splits](const TreeNode<LineWrapper, &LineWrapper::l>* node){
-                if(node == nullptr)
+                if(node == nullptr || (node->children[0] == nullptr || node->children[1] == nullptr))
                 {
                     return;
                 }
@@ -1103,8 +1104,113 @@ TEST(Benchmarks, DISABLED_NearestNeighbour_Lines_Random_SplitTypes)
             {
                 visitor(sector.rootNode.get());
             }
+
+
             unsigned int total = moment_splits[0] + moment_splits[1] + moment_splits[2] + directional_splits;
             out << (float)moment_splits[0]/(float)total << ";" << (float)moment_splits[1]/(float)total << ";" << (float)moment_splits[2]/(float)total << ";" << (float)directional_splits/(float)total << std::endl;
+            std::cout << "                       \r";
+            out << "END DATA" << std::endl;
+            out.flush();
+        }
+        out << "END BENCH" << std::endl << std::endl;
+    }
+
+    out.flush();
+    out.close();
+}
+
+TEST(Benchmarks, DISABLED_NearestNeighbour_Lines_Random_SplitTypes_By_Level)
+{
+    std::fstream out(output_path+"NearestNeighbour_Lines_Random_SplitTypes_By_Level.txt", std::fstream::out | std::fstream::app);
+    if(out.fail())
+    {
+        std::cerr << "Failed to open file" << std::endl;
+        return;
+    }
+
+    unsigned int line_count = 100000;
+
+    {
+        out << "BENCH INFO" << std::endl;
+        unsigned int iteration_count = 1;
+        float max_dist = 100;
+
+        out << "Line count: " << line_count << std::endl;
+        out << "Iteration count: " << iteration_count << std::endl;
+        out << "Maximum distance: " << max_dist << std::endl;
+
+        out << "START BENCH" << std::endl;
+        for(int i = 0; i < iteration_count; ++i)
+        {
+            std::cout << "Iteration " << (i+1) << " of " << iteration_count << std::endl;
+            unsigned int line_seed;
+            {
+                std::random_device dev{};
+                line_seed = dev();
+            }
+
+            out << "Line generation seed: " << line_seed << std::endl;
+
+            //Generate lines and tree
+            std::cout << "Generating lines & tree\r";
+            auto lines = LoadFromFile("/home/wouter/Documents/sphere_lines.txt");
+            for(auto& l : lines)
+            {
+                l.l.m.z() *= 2.0;
+            }
+            //std::vector<LineWrapper> lines = GenerateRandomLines(line_seed, line_count, max_dist);
+            auto tree = TreeBuilder<LineWrapper, &LineWrapper::l>::Build(lines.begin(), lines.end());
+
+            //Perform queries
+            out << "START DATA" << std::endl;
+            std::cout << "Running queries        \r";
+
+            Eigen::Matrix<int, 4, 100> split_counts = Eigen::Matrix<int, 4, 100>::Zero(); // Rows are {phi, theta, radius, directional}, columns are levels
+            std::function<void(const TreeNode<LineWrapper, &LineWrapper::l>*, int)> visitor;
+            visitor = std::function([&visitor, &split_counts](const TreeNode<LineWrapper, &LineWrapper::l>* node, int level){
+                if(node == nullptr || (node->children[0] == nullptr || node->children[1] == nullptr))
+                {
+                    return;
+                }
+
+                if(node->type == NodeType::moment)
+                {
+                    split_counts(node->bound_component_idx, level)++;
+                }else if(node->type == NodeType::direction)
+                {
+                    split_counts(3, level)++;
+                }
+
+                visitor(node->children[0].get(), level+1);
+                visitor(node->children[1].get(), level+1);
+            });
+            for(const auto& sector : tree.sectors)
+            {
+                visitor(sector.rootNode.get(), 0);
+            }
+
+            Eigen::Matrix<float, 4, 100> split_freqs;
+            for(int level = 0; level < 100; ++level)
+            {
+                unsigned int total = split_counts.col(level).sum();
+                split_freqs.col(level) = split_counts.col(level).cast<float>() / (float)total;
+            }
+
+            for(int level = 0; level < 100; ++level)
+            {
+                for(int dim_i = 0; dim_i < 4; ++dim_i)
+                {
+                    auto curVal = split_freqs(dim_i, level);
+                    curVal = std::isnan(curVal) ? 0 : curVal;
+                    out << curVal;
+                    if(dim_i < 3)
+                    {
+                        out << ";";
+                    }else{
+                        out << std::endl;
+                    }
+                }
+            }
             std::cout << "                       \r";
             out << "END DATA" << std::endl;
             out.flush();
@@ -1168,4 +1274,57 @@ TEST(Benchmarks, DISABLED_NearestNeighbour_Lines_Random_Build_Variances)
     out.close();
 
     Diag::reset();
+}
+
+TEST(Benchmarks, DISABLED_NearestNeighbour_Lines_Random_Spreads)
+{
+    std::fstream out(output_path+"NearestNeighbour_Lines_Random_Spreads.txt", std::fstream::out | std::fstream::app);
+    if(out.fail())
+    {
+        std::cerr << "Failed to open file" << std::endl;
+        return;
+    }
+
+    unsigned int line_count = 1000000;
+
+    {
+        out << "BENCH INFO" << std::endl;
+        unsigned int iteration_count = 10;
+        float max_dist = 100;
+
+        out << "Line count: " << line_count << std::endl;
+        out << "Iteration count: " << iteration_count << std::endl;
+        out << "Maximum distance: " << max_dist << std::endl;
+
+        out << "START BENCH" << std::endl;
+        unsigned int line_seed;
+        {
+            std::random_device dev{};
+            line_seed = dev();
+        }
+
+        out << "Line generation seed: " << line_seed << std::endl;
+
+        auto lines = LoadFromFile("/home/wouter/Documents/sphere_lines.txt");
+        for(auto& l : lines)
+        {
+            l.l.m.z() *= 2.0;
+        }
+        //std::vector<LineWrapper> lines = GenerateRandomLines(line_seed, line_count, max_dist);
+
+        out << "START DATA" << std::endl;
+
+        for(const auto& line : lines)
+        {
+            auto m = cart2spherical(line.l.m);
+            out << m.x() << ";" << m.y() << ";" << m.z() << std::endl;
+        }
+
+        out << "END DATA" << std::endl;
+
+        out << "END BENCH" << std::endl << std::endl;
+    }
+
+    out.flush();
+    out.close();
 }

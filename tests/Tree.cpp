@@ -50,43 +50,7 @@ TEST(Tree, TestBuildTree_SubNodesInParent)
     auto tree = pluckertree::TreeBuilder::Build(lines.begin(), lines.end());
 }*/
 
-
-TEST(Tree, TestFindNeighbours)
-{
-}
-
-
-//100, 100, 3224486327, 1750131217, nlopt roundoff-limited
-//100, 100, 4161057528, 2131736907, nlopt roundoff-limited
-//100, 100, 729685792, 519425711
-//100, 100, 3289432969, 3221991529
-
-//100, 100, 240607058, 2271942277, nlopt roundoff-limited
-//100, 100, 952045152, 903079720, nlopt roundoff-limited
-//100, 100, 912149981, 2661143327, nlopt roundoff-limited
-//100, 100, 3429696701, 2776366842, nlopt roundoff-limited
-//100, 100, 702423470, 2130483690, nlopt roundoff-limited
-//100, 100, 1276366762, 752999194, nlopt roundoff-limited
-//100, 100, 3718611071, 759437136, nlopt roundoff-limited
-//100, 100, 3769033040, 891816204
-
-//100, 100, 738702163, 375110826
-//100, 100, 2304416678, 672525704*
-//100, 100, 1527464166, 910928879*
-//100, 100, 1539785773, 2171327458
-//100, 100, 1908813432, 3002281929
-//100, 100, 3485206349, 3944654115
-//100, 100, 2338550543, 1906307967 x2
-
-//100, 100, 1562601595, 4055045319
-//100, 100, 191214952, 933993246
-//100, 100, 597655902, 93213975
-//100, 100, 2491745788, 1514172478
-//100, 100, 3496756572, 1131774831
-//100, 100, 2127983384, 597997659
-//100, 100, 1932884953, 3564452931 x2
 #include <chrono>
-
 
 TEST(Tree, DISABLED_TestFindNeighbours_1_Random)
 {
@@ -97,13 +61,13 @@ TEST(Tree, DISABLED_TestFindNeighbours_1_Random)
 
         std::random_device dev{};
 
-        unsigned int line_seed = 2777538237;//dev();
+        unsigned int line_seed = dev();
         std::cout << "Line generation seed: " << line_seed << std::endl;
         std::vector<LineWrapper> lines = GenerateRandomLines(line_seed, line_count, 100);
 
         auto tree = TreeBuilder<LineWrapper, &LineWrapper::l>::Build(lines.begin(), lines.end());
 
-        unsigned int query_seed = 544307922;//dev();
+        unsigned int query_seed = dev();
         std::cout << "Query generation seed: " << query_seed << std::endl;
         auto query_points = GenerateRandomPoints(query_seed, query_count, 100);
 
@@ -111,10 +75,10 @@ TEST(Tree, DISABLED_TestFindNeighbours_1_Random)
 
         int i = 0;
         for (const auto &query : query_points) {
-            if (i < 8) {
+            /*if (i < 8) {
                 i++;
                 continue;
-            }
+            }*/
             //if(i % 10 == 0)
             {
                 std::cout << i << std::endl;
@@ -196,21 +160,25 @@ TEST(Tree, DISABLED_ShowMeTheGrid)
 {
     //dlb, dub, m_start, m_end
 
-    /*Eigen::Vector3f dlb = Eigen::Vector3f(0,0,-1);
-    Eigen::Vector3f dub = Eigen::Vector3f(-std::sqrt(2)/2.0, std::sqrt(2)/2, 0);
-    Eigen::Vector3f mlb(-M_PI, 0.785398185, 1);
-    Eigen::Vector3f mub(-M_PI/2, 2.3561945, 80);
-    Eigen::Vector3f q(39.110939, 52.7779579, 40.48032);*/
-    Eigen::Vector3f dlb = Eigen::Vector3f(0.707106769, 0.707106769, 0);
-    Eigen::Vector3f dub = Eigen::Vector3f(0,0,1);
-    Eigen::Vector3f mlb(1.57079637, 0.785398185, 129.264511);
-    Eigen::Vector3f mub(2.27183151, 1.74038839, 133.691605);
-    Eigen::Vector3f q(28.2510929,16.3163109,34.3497543);
+    Eigen::Vector3f q(1,0,0);
+    Eigen::Vector3f dlb = Eigen::Vector3f(-1,0,0);
+    Eigen::Vector3f dub = Eigen::Vector3f(0,-1,0);
+    //top
+    Eigen::Vector3f mlb(-M_PI, 0, 0);
+    Eigen::Vector3f mub(M_PI, 0.785398185, 1);
+    //left
+    //Eigen::Vector3f mlb(M_PI/4, 0.785398185, 0);
+    //Eigen::Vector3f mub(3*M_PI/4, 2.356194487, 1);
+    //all
+    //Eigen::Vector3f mlb(-M_PI, 0, 0);
+    //Eigen::Vector3f mub(M_PI, M_PI, 1);
+    //hemisphere
+    //Eigen::Vector3f mlb(-M_PI, M_PI/2, 0);
+    //Eigen::Vector3f mub(M_PI, M_PI, 1);
     std::string file = "/home/wouter/Desktop/pluckerdata/0";
     pluckertree::show_me_the_grid(file, dlb, dub, mlb, mub, q);
 }
 
-//3377894755, 4158056333
 TEST(Tree, DISABLED_TestFindNearestHit_Random)
 {
     for(int pass = 0; pass < 1; ++pass)

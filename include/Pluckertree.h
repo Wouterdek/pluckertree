@@ -598,30 +598,7 @@ private:
         std::uniform_real_distribution<float> unit{0.0f, 1.0f};
         float v = unit(MyRand::rand_dev);
 
-        // Calculate max moment variance
-#define M_RANDOM
-#if defined(M_MAX_VAR) || defined(M_MIN_VAR)
-        Eigen::Array3f mVarianceVect = calc_vec3_pop_variance(lines_begin, lines_end, [](const Content& c){return cart2spherical((c.*line_member).m); });
-        Eigen::Array3f mVarianceNormFact = (bounds.m_end - bounds.m_start).array();
-        mVarianceNormFact = mVarianceNormFact * mVarianceNormFact;
-        mVarianceVect = mVarianceVect.cwiseQuotient(mVarianceNormFact);
-    #if defined(M_MAX_VAR)
-        auto mVariance = mVarianceVect.maxCoeff(&splitComponent);
-    #elif defined(M_MIN_VAR)
-        auto mVariance = mVarianceVect.minCoeff(&splitComponent);
-    #endif
-#elif defined(M_RANDOM)
-        if(v < 0.37)
-        {
-            splitComponent = 0;
-        }else if(v < 0.65)
-        {
-            splitComponent = 1;
-        }else{
-            splitComponent = 2;
-        }
-#endif
-
+        ///////////////////////////////
         // Calculate directional variance
         // project direction vectors to bound domain, calculate variance of sine of angle to bound, and use this to decide NodeType
         const Eigen::Vector3f& cur_bound = bounds.d_bound_1;
@@ -650,14 +627,236 @@ private:
         auto dVarianceNormFactor = std::asin(dMaxSin);
         dVarianceNormFactor = dVarianceNormFactor * dVarianceNormFactor;
         auto dVarianceNormalized = dVariance;
-        if(Diag::on_build_variance_calculated.has_value())
+        */
+        ///////////////////////////////
+
+        bool splitOnDir = false;
+        ///////////////////////////////
+        // Calculate max moment variance
+#define M_MAX_VAR
+#if defined(M_MAX_VAR) || defined(M_MIN_VAR)
+        Eigen::Array3f mVarianceVect = calc_vec3_pop_variance(lines_begin, lines_end, [](const Content& c){return cart2spherical((c.*line_member).m); });
+        Eigen::Array3f mVarianceNormFact = (bounds.m_end - bounds.m_start).array();
+        mVarianceNormFact = mVarianceNormFact * mVarianceNormFact;
+        mVarianceVect = mVarianceVect.cwiseQuotient(mVarianceNormFact);
+    #if defined(M_MAX_VAR)
+        auto mVariance = mVarianceVect.maxCoeff(&splitComponent);
+    #elif defined(M_MIN_VAR)
+        auto mVariance = mVarianceVect.minCoeff(&splitComponent);
+    #endif
+        //splitOnDir = dVarianceNormalized > mVariance;
+
+        /*if(level < 5 && level % 2 == 0)
         {
-            Diag::on_build_variance_calculated.value()(mVarianceVect.x(), mVarianceVect.y(), mVarianceVect.z(), dVarianceNormalized);
+            splitComponent = 2;
         }*/
 
-        //if(dVarianceNormalized > mVariance)
+        splitOnDir = v < 0.25;
+        unsigned int pivot_i = lineCount/2;
+#elif defined(M_MAX_MAD) || defined(M_MIN_MAD)
+        float phi_mad = calc_MAD(lines_begin, lines_end, [](const Content& c){return cart2spherical((c.*line_member).m)[0]; });
+        float theta_mad = calc_MAD(lines_begin, lines_end, [](const Content& c){return cart2spherical((c.*line_member).m)[1]; });
+        float radius_mad = calc_MAD(lines_begin, lines_end, [](const Content& c){return cart2spherical((c.*line_member).m)[2]; });
+        Eigen::Array3f mMADVect {phi_mad, theta_mad, radius_mad};
+        Eigen::Array3f mMADNormFact = (bounds.m_end - bounds.m_start).array();
+        //mMADNormFact[2] = mMADNormFact[2] / 3.0f;
+        //std::cout << mMADVect.transpose() << " | " << (mMADVect/mMADNormFact).transpose() << std::endl;
+        mMADVect = mMADVect.cwiseQuotient(mMADNormFact);
+    #if defined(M_MAX_MAD)
+        auto mMAD = mMADVect.maxCoeff(&splitComponent);
+    #elif defined(M_MIN_MAD)
+        auto mMAD = mMADVect.minCoeff(&splitComponent);
+    #endif
+        /*if(level == 0)
+        {
+            splitComponent = 2;
+        }else if(level == 1)
+        {
+            splitComponent = 0;
+        }*/
 
-        if(v < 0.25)
+        //splitOnDir = dVarianceNormalized > mVariance;
+        splitOnDir = v < 0.25;
+        unsigned int pivot_i = lineCount/2;
+#elif defined(M_RANDOM)
+        if(v < 0.37)
+        {
+            splitComponent = 0;
+        }else if(v < 0.65)
+        {
+            splitComponent = 1;
+        }else{
+            splitComponent = 2;
+        }
+        splitOnDir = v < 0.25;
+        unsigned int pivot_i = lineCount/2;
+#elif defined(M_LEVEL_ALTERNATING)
+        splitComponent = level % 4;
+        splitOnDir = (level % 4) == 3;
+        unsigned int pivot_i = lineCount/2;
+#elif defined(M_VOLUME_HEURISTIC)
+        unsigned int cur_best_dim_i = 0;
+        unsigned int cur_best_i = 0;
+        float cur_best_h = 1E99;
+
+        for(int dim_i = 0; dim_i < 3; ++dim_i)
+        {
+            std::sort(lines_begin, lines_end, [splitComponent](const Content& c1, const Content& c2){
+                const auto& l1 = c1.*line_member;
+                const auto& l2 = c2.*line_member;
+                return cart2spherical(l1.m)[splitComponent] < cart2spherical(l2.m)[splitComponent];
+            });
+
+            for(unsigned int i = 1; i < lineCount-1; ++i)
+            {
+                const Line& l1 = (*(lines_begin+i-1)).*line_member;
+                const Line& l2 = (*(lines_begin+i+1)).*line_member;
+                subBounds1.m_end[dim_i] = cart2spherical(l1.m)[dim_i];
+                subBounds2.m_start[dim_i] = cart2spherical(l2.m)[dim_i];
+
+                float vol1;
+                {
+                    float r1 = subBounds1.m_start.z();
+                    float r2 = subBounds1.m_end.z();
+                    vol1 = (((r2*r2*r2) - (r1*r1*r1))/2.0f) * (-std::cos(subBounds1.m_end.y()) + std::cos(subBounds1.m_start.y())) * (subBounds1.m_end.x() - subBounds1.m_start.x());
+                }
+
+                float vol2;
+                {
+                    float r1 = subBounds2.m_start.z();
+                    float r2 = subBounds2.m_end.z();
+                    vol2 = (((r2*r2*r2) - (r1*r1*r1))/2.0f) * (-std::cos(subBounds2.m_end.y()) + std::cos(subBounds2.m_start.y())) * (subBounds2.m_end.x() - subBounds2.m_start.x());
+                }
+
+                auto node1ElemCount = i;
+                auto node2ElemCount = (lineCount - i - 1);
+
+                //float heuristic = (vol1 * node1ElemCount) + (vol2 * node2ElemCount);
+                //float heuristic = (vol1) + (vol2);
+                //float heuristic = (vol1/node1ElemCount) + (vol2/node2ElemCount);
+                float heuristic = (vol1*node1ElemCount) + (vol2*node2ElemCount);
+
+                if(heuristic < cur_best_h)
+                {
+                    cur_best_h = heuristic;
+                    cur_best_dim_i = dim_i;
+                    cur_best_i = i;
+                }
+            }
+            subBounds1.m_end[dim_i] = bounds.m_end[dim_i];
+            subBounds2.m_start[dim_i] = bounds.m_start[dim_i];
+        }
+        splitComponent = cur_best_dim_i;
+        unsigned int pivot_i = cur_best_i;
+        splitOnDir = v < 0.25;
+#elif defined(M_LONGEST_DIST)
+        unsigned int cur_best_dim_i = 0;
+        unsigned int cur_best_i = 0;
+        float cur_best_h = 0;
+
+        for(int dim_i = 0; dim_i < 3; ++dim_i)
+        {
+            std::sort(lines_begin, lines_end, [splitComponent](const Content& c1, const Content& c2){
+                const auto& l1 = c1.*line_member;
+                const auto& l2 = c2.*line_member;
+                return cart2spherical(l1.m)[splitComponent] < cart2spherical(l2.m)[splitComponent];
+            });
+
+            for(unsigned int i = 1; i < lineCount-1; ++i)
+            {
+                const Line& l1 = (*(lines_begin+i-1)).*line_member;
+                const Line& l2 = (*(lines_begin+i+1)).*line_member;
+
+                float heuristic = ((cart2spherical(l2.m)[dim_i]) - (cart2spherical(l1.m)[dim_i]))/(bounds.m_end[dim_i] - bounds.m_start[dim_i]);
+
+                if(heuristic > cur_best_h)
+                {
+                    cur_best_h = heuristic;
+                    cur_best_dim_i = dim_i;
+                    cur_best_i = i;
+                }
+            }
+        }
+        splitComponent = cur_best_dim_i;
+        unsigned int pivot_i = cur_best_i;
+        splitOnDir = v < 0.25;
+#elif defined(M_PACK_AND_CUT)
+        bool isPackNode = level % 4 == 0;
+        unsigned int cur_best_dim_i = 0;
+        unsigned int cur_best_i = 0;
+        float cur_best_h = 0;
+        std::array<float,3> cur_best_hs {0,0,0};
+
+        for(int dim_i = 0; dim_i < 3; ++dim_i)
+        {
+            std::sort(lines_begin, lines_end, [splitComponent](const Content& c1, const Content& c2){
+                const auto& l1 = c1.*line_member;
+                const auto& l2 = c2.*line_member;
+                return cart2spherical(l1.m)[splitComponent] < cart2spherical(l2.m)[splitComponent];
+            });
+
+            for(unsigned int i = 1; i < lineCount-1; ++i)
+            {
+                const Line& l1 = (*(lines_begin+i-1)).*line_member;
+                const Line& l2 = (*(lines_begin+i+1)).*line_member;
+                subBounds1.m_end[dim_i] = cart2spherical(l1.m)[dim_i];
+                subBounds2.m_start[dim_i] = cart2spherical(l2.m)[dim_i];
+
+                float vol1;
+                {
+                    float r1 = subBounds1.m_start.z();
+                    float r2 = subBounds1.m_end.z();
+                    vol1 = (((r2*r2*r2) - (r1*r1*r1))/2.0f) * (-std::cos(subBounds1.m_end.y()) + std::cos(subBounds1.m_start.y())) * (subBounds1.m_end.x() - subBounds1.m_start.x());
+                }
+
+                float vol2;
+                {
+                    float r1 = subBounds2.m_start.z();
+                    float r2 = subBounds2.m_end.z();
+                    vol2 = (((r2*r2*r2) - (r1*r1*r1))/2.0f) * (-std::cos(subBounds2.m_end.y()) + std::cos(subBounds2.m_start.y())) * (subBounds2.m_end.x() - subBounds2.m_start.x());
+                }
+
+                auto node1ElemCount = i;
+                auto node2ElemCount = (lineCount - i - 1);
+
+                /*float heuristic1 = 0.5*(vol1/node1ElemCount) + (node2ElemCount/vol2); //cut, pack
+                float heuristic2 = (node1ElemCount/vol1) + 0.5*(vol2/node2ElemCount); //pack, cut
+                float heuristic = std::max(heuristic1, heuristic2);*/
+
+                float heuristic;
+                if(isPackNode)
+                {
+                    heuristic = std::max(vol1/node1ElemCount, vol2/node2ElemCount);
+                }else{
+                    heuristic = std::max(node1ElemCount/vol1, node2ElemCount/vol2);
+                }
+
+                if(heuristic > cur_best_hs[dim_i]) { cur_best_hs[dim_i] = heuristic; }
+
+                if(heuristic > cur_best_h)
+                {
+                    cur_best_h = heuristic;
+                    cur_best_dim_i = dim_i;
+                    cur_best_i = i;
+                }
+            }
+            subBounds1.m_end[dim_i] = bounds.m_end[dim_i];
+            subBounds2.m_start[dim_i] = bounds.m_start[dim_i];
+        }
+        splitComponent = cur_best_dim_i;
+        unsigned int pivot_i = cur_best_i;
+        splitOnDir = v < 0.25;
+#endif
+
+        ///////////////////////////////
+
+        if(Diag::on_build_variance_calculated.has_value())
+        {
+            //Diag::on_build_variance_calculated.value()(mVarianceVect.x(), mVarianceVect.y(), mVarianceVect.z(), 0/*dVarianceNormalized*/);
+            //Diag::on_build_variance_calculated.value()(cur_best_hs[0], cur_best_hs[1], cur_best_hs[2], 0/*dVarianceNormalized*/);
+        }
+
+        if(splitOnDir)
         {
             // calculate new bound vector: calc cross product of dir vectors with cur bound vector to obtain sin,
             // sort by sin, take median, new bound vector is cross product of bound_domain_normal with median dir vect
@@ -682,87 +881,6 @@ private:
             node = std::make_unique<Node>(dir_bound, *pivot);
         } else
         {
-#if defined(M_VOLUME_HEURISTIC)
-            unsigned int cur_best_dim_i = 0;
-            unsigned int cur_best_i = 0;
-            float cur_best_h = 1E99;
-
-            for(int dim_i = 0; dim_i < 3; ++dim_i)
-            {
-                std::sort(lines_begin, lines_end, [splitComponent](const Content& c1, const Content& c2){
-                    const auto& l1 = c1.*line_member;
-                    const auto& l2 = c2.*line_member;
-                    return cart2spherical(l1.m)[splitComponent] < cart2spherical(l2.m)[splitComponent];
-                });
-
-                for(unsigned int i = 1; i < lineCount-1; ++i)
-                {
-                    const Line& l1 = (*(lines_begin+i-1)).*line_member;
-                    const Line& l2 = (*(lines_begin+i+1)).*line_member;
-                    subBounds1.m_end[dim_i] = cart2spherical(l1.m)[dim_i];
-                    subBounds2.m_start[dim_i] = cart2spherical(l2.m)[dim_i];
-
-                    float vol1;
-                    {
-                        float r1 = subBounds1.m_start.z();
-                        float r2 = subBounds1.m_end.z();
-                        vol1 = (((r2*r2*r2) - (r1*r1*r1))/2.0f) * (-std::cos(subBounds1.m_end.y()) + std::cos(subBounds1.m_start.y())) * (subBounds1.m_end.x() - subBounds1.m_start.x());
-                    }
-
-                    float vol2;
-                    {
-                        float r1 = subBounds2.m_start.z();
-                        float r2 = subBounds2.m_end.z();
-                        vol2 = (((r2*r2*r2) - (r1*r1*r1))/2.0f) * (-std::cos(subBounds2.m_end.y()) + std::cos(subBounds2.m_start.y())) * (subBounds2.m_end.x() - subBounds2.m_start.x());
-                    }
-                    //float heuristic = (vol1 * i) + (vol2 * (lineCount - i - 1));
-                    float heuristic = (vol1) + (vol2);
-
-                    if(heuristic < cur_best_h)
-                    {
-                        cur_best_h = heuristic;
-                        cur_best_dim_i = dim_i;
-                        cur_best_i = i;
-                    }
-                }
-                subBounds1.m_end[dim_i] = bounds.m_end[dim_i];
-                subBounds2.m_start[dim_i] = bounds.m_start[dim_i];
-            }
-            splitComponent = cur_best_dim_i;
-            unsigned int pivot_i = cur_best_i;
-#elif defined(M_LONGEST_DIST)
-            unsigned int cur_best_dim_i = 0;
-            unsigned int cur_best_i = 0;
-            float cur_best_h = 0;
-
-            for(int dim_i = 0; dim_i < 3; ++dim_i)
-            {
-                std::sort(lines_begin, lines_end, [splitComponent](const Content& c1, const Content& c2){
-                    const auto& l1 = c1.*line_member;
-                    const auto& l2 = c2.*line_member;
-                    return cart2spherical(l1.m)[splitComponent] < cart2spherical(l2.m)[splitComponent];
-                });
-
-                for(unsigned int i = 1; i < lineCount-1; ++i)
-                {
-                    const Line& l1 = (*(lines_begin+i-1)).*line_member;
-                    const Line& l2 = (*(lines_begin+i+1)).*line_member;
-
-                    float heuristic = ((cart2spherical(l2.m)[dim_i]) - (cart2spherical(l1.m)[dim_i]))/(bounds.m_end[dim_i] - bounds.m_start[dim_i]);
-
-                    if(heuristic > cur_best_h)
-                    {
-                        cur_best_h = heuristic;
-                        cur_best_dim_i = dim_i;
-                        cur_best_i = i;
-                    }
-                }
-            }
-            splitComponent = cur_best_dim_i;
-            unsigned int pivot_i = cur_best_i;
-#else
-            unsigned int pivot_i = lineCount/2;
-#endif
             std::sort(lines_begin, lines_end, [splitComponent](const Content& c1, const Content& c2){
                 const auto& l1 = c1.*line_member;
                 const auto& l2 = c2.*line_member;

@@ -21,6 +21,7 @@ struct LineSegmentWrapper
     explicit LineSegmentWrapper(LineSegment line) : l(std::move(line)) {}
 };
 
+std::vector<LineWrapper> LoadFromFile(const std::string& filename);
 std::vector<LineWrapper> GenerateRandomLines(unsigned int seed, unsigned int lineCount, float maxDist);
 std::vector<LineWrapper> GenerateParallelLines(unsigned int seed, unsigned int lineCount, float maxDist, const Vector3f& direction);
 std::vector<LineWrapper> GenerateEquiDistantLines(unsigned int seed, unsigned int lineCount, float maxDist); //Equidistant from center

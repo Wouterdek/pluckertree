@@ -21,7 +21,7 @@ TEST(RegionDistanceMinimizer, TestTopSector1)
 
     Eigen::Vector3f min = mlb + (mub - mlb)/2;
     auto minDist = FindMinDist(q, dlb, dub, mlb, mub, min);
-    float epsilon = 1e-6;
+    float epsilon = 1e-3;
     EXPECT_NEAR(minDist, 0, epsilon);
 }
 
@@ -36,7 +36,7 @@ TEST(RegionDistanceMinimizer, TestTopSector2)
 
     Eigen::Vector3f min = mlb + (mub - mlb)/2;
     auto minDist = FindMinDist(q, dlb, dub, mlb, mub, min);
-    float epsilon = 1e-6;
+    float epsilon = 1e-3;
     EXPECT_NEAR(minDist, 0.806143, epsilon);
 }
 
@@ -51,7 +51,7 @@ TEST(RegionDistanceMinimizer, TestSideSector1)
 
     Eigen::Vector3f min = mlb + (mub - mlb)/2;
     auto minDist = FindMinDist(q, dlb, dub, mlb, mub, min);
-    float epsilon = 1e-6;
+    float epsilon = 1e-3;
     EXPECT_NEAR(minDist, 0, epsilon);
 }
 
@@ -66,7 +66,7 @@ TEST(RegionDistanceMinimizer, TestSideSector2)
 
     Eigen::Vector3f min = mlb + (mub - mlb)/2;
     auto minDist = FindMinDist(q, dlb, dub, mlb, mub, min);
-    float epsilon = 1e-6;
+    float epsilon = 1e-3;
     EXPECT_NEAR(minDist, 0, epsilon);
 }
 

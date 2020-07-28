@@ -1,4 +1,23 @@
 #include "DataSetGenerator.h"
+#include <fstream>
+#include <Eigen/Dense>
+
+std::vector<LineWrapper> LoadFromFile(const std::string& filename)
+{
+    std::vector<LineWrapper> result;
+    std::ifstream in(filename);
+    std::string line;
+    while (std::getline(in, line))
+    {
+        std::istringstream iss(line);
+        char sep;
+        Eigen::Vector3f m, d;
+        if (!(iss >> m.x() >> sep >> m.y()>> sep >> m.z() >> sep >> d.x() >> sep >> d.y() >> sep >> d.z())) { break; } // error
+
+        result.emplace_back(Line(d, m));
+    }
+    return result;
+}
 
 std::vector<LineWrapper> GenerateRandomLines(unsigned int seed, unsigned int lineCount, float maxDist)
 {
@@ -6,7 +25,7 @@ std::vector<LineWrapper> GenerateRandomLines(unsigned int seed, unsigned int lin
     lines.reserve(lineCount);
 
     std::default_random_engine rng{seed};
-    std::uniform_real_distribution<float> dist(0, maxDist);
+    std::uniform_real_distribution<float> dist(-maxDist, maxDist);
     for (int i = 0; i < lineCount; ++i) {
         Line l(Vector3f::Zero(), Vector3f::Zero());
         do {
