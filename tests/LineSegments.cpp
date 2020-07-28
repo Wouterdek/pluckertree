@@ -8,7 +8,156 @@
 using namespace testing;
 using namespace Eigen;
 
-TEST(Tree, DISABLED_TestFindNeighbouringLineSegments_Random)
+std::vector<int> FindSegment(const pluckertree::segments::TreeNode<LineSegmentWrapper, &LineSegmentWrapper::l>* node, const pluckertree::segments::Bounds& parentBounds, const LineSegment& smallestLine)
+{
+    if (node == nullptr) {
+        return {};
+    }else if(node->content.l == smallestLine)
+    {
+        return {0xFACE0FF};
+    }
+
+    std::vector<int> idx {};
+
+    std::array<pluckertree::segments::Bounds, 2> childBounds {};
+
+    for(int i = 0; i < 2; ++i) {
+        childBounds[i] = parentBounds;
+
+        if (node->type == pluckertree::segments::NodeType::moment) {
+            if (i == 0) {
+                childBounds[0].m_end[node->bound_component_idx] = node->m_component;
+            } else {
+                childBounds[1].m_start[node->bound_component_idx] = node->m_component;
+            }
+        } else if (node->type == pluckertree::segments::NodeType::direction) {
+            if (i == 0) {
+                childBounds[i].d_bound_1 = node->d_bound;
+                //childBounds[i].d_bound_2 = curBounds.d_bound_2;
+            } else {
+                //childBounds[i].d_bound_1 = curBounds.d_bound_1;
+                childBounds[i].d_bound_2 = -node->d_bound;
+            }
+        } else if (node->type == pluckertree::segments::NodeType::t) {
+            if (i == 0) {
+                childBounds[i].t1Min = node->c1t1;
+                childBounds[i].t2Max = node->c1t2;
+            } else {
+                childBounds[i].t1Min = node->c2t1;
+                childBounds[i].t2Max = node->c2t2;
+            }
+        }
+    }
+
+    std::vector<int> subIdx;
+    if (node->type == pluckertree::segments::NodeType::t) {
+        auto c1Idx = FindSegment(node->children[0].get(), childBounds[0], smallestLine);
+        if(c1Idx.size() > 0 && c1Idx[c1Idx.size()-1] == 0xFACE0FF)
+        {
+            idx.push_back(0);
+            subIdx = c1Idx;
+        }else{
+            auto c2Idx = FindSegment(node->children[1].get(), childBounds[1], smallestLine);
+            if(c2Idx.size() > 0 && c2Idx[c2Idx.size()-1] == 0xFACE0FF)
+            {
+                idx.push_back(1);
+                subIdx = c2Idx;
+            }
+        }
+    } else {
+
+        if (Eigen::AlignedBox<float, 3>(childBounds[0].m_start, childBounds[0].m_end).contains(
+                cart2spherical(smallestLine.l.m))
+            && childBounds[0].d_bound_1.dot(smallestLine.l.d) >= 0 //greater or equal, or just greater?
+            && childBounds[0].d_bound_2.dot(smallestLine.l.d) >= 0) {
+            idx.push_back(0);
+            subIdx = FindSegment(node->children[0].get(), childBounds[0], smallestLine);
+        } else {
+            idx.push_back(1);
+            subIdx = FindSegment(node->children[1].get(), childBounds[1], smallestLine);
+        }
+    }
+
+    for (int curIdx : subIdx) {
+        idx.push_back(curIdx);
+    }
+
+    return idx;
+}
+
+std::vector<int> FindSegment(const pluckertree::segments::Tree<LineSegmentWrapper, &LineSegmentWrapper::l>& tree, const LineSegment& smallestLine)
+{
+    std::vector<int> idx;
+    int sectI = 0;
+    for (const auto &sector: tree.sectors) {
+        if (Eigen::AlignedBox<float, 3>(sector.bounds.m_start, sector.bounds.m_end).contains(
+                cart2spherical(smallestLine.l.m))
+            && sector.bounds.d_bound_1.dot(smallestLine.l.d) >= 0 //greater or equal, or just greater?
+            && sector.bounds.d_bound_2.dot(smallestLine.l.d) >= 0) {
+            idx.push_back(sectI);
+            const auto *node = sector.rootNode.get();
+            pluckertree::segments::Bounds curBounds = sector.bounds;
+
+            auto result = FindSegment(node, curBounds, smallestLine);
+            for(int curIdx : result)
+            {
+                idx.push_back(curIdx);
+            }
+
+            break;
+        }
+        sectI++;
+    }
+    return idx;
+}
+
+TEST(Tree, DISABLED_TestLineSegmentsInBounds)
+{
+    for(int pass = 0; pass < 100; ++pass)
+    {
+        unsigned int line_count = 100;
+
+        std::random_device dev{};
+
+        unsigned int line_seed = dev();
+        std::cout << "Line segment generation seed: " << line_seed << std::endl;
+        auto lines = GenerateRandomLineSegments(line_seed, line_count, 100, -100, 100);
+
+        auto tree = pluckertree::segments::TreeBuilder<LineSegmentWrapper, &LineSegmentWrapper::l>::Build(lines.begin(), lines.end());
+
+        std::array<const LineSegmentWrapper *, 1> result{nullptr};
+
+        std::vector<std::tuple<const pluckertree::segments::TreeNode<LineSegmentWrapper, &LineSegmentWrapper::l>*, float, float>> todo;
+        for(const auto& sector : tree.sectors)
+        {
+            if(sector.rootNode != nullptr)
+            {
+                todo.emplace_back(sector.rootNode.get(), sector.bounds.t1Min, sector.bounds.t2Max);
+            }
+        }
+        while(!todo.empty())
+        {
+            const auto [curNode, t1, t2] = todo.back();
+            todo.pop_back();
+
+            EXPECT_GE(curNode->content.l.t1, t1);
+            EXPECT_LE(curNode->content.l.t2, t2);
+
+            bool isTSplitNode = curNode->type == pluckertree::segments::NodeType::t;
+
+            if(curNode->children[0] != nullptr)
+            {
+                todo.emplace_back(curNode->children[0].get(), isTSplitNode ? curNode->c1t1 : t1, isTSplitNode ? curNode->c1t2 : t2);
+            }
+            if(curNode->children[1] != nullptr)
+            {
+                todo.emplace_back(curNode->children[1].get(), isTSplitNode ? curNode->c2t1 : t1, isTSplitNode ? curNode->c2t2 : t2);
+            }
+        }
+    }
+}
+
+TEST(Tree, TestFindNeighbouringLineSegments_Random)
 {
     for(int pass = 0; pass < 100; ++pass)
     {
@@ -31,7 +180,7 @@ TEST(Tree, DISABLED_TestFindNeighbouringLineSegments_Random)
 
         int i = 0;
         for (const auto &query : query_points) {
-            if(i % 10 == 0)
+            if(i % 50 == 0)
             {
                 std::cout << i << std::endl;
             }
@@ -45,7 +194,7 @@ TEST(Tree, DISABLED_TestFindNeighbouringLineSegments_Random)
             auto distF = [](const LineSegment& s, const Eigen::Vector3f& q)
             {
                 Eigen::Vector3f p = s.l.d.cross(s.l.m);
-                float t = p.dot(q);
+                float t = s.l.d.dot(q);
                 t = std::min(std::max(t, s.t1), s.t2);
                 Eigen::Vector3f v = (p + t*s.l.d) - q;
                 return v;
@@ -60,43 +209,7 @@ TEST(Tree, DISABLED_TestFindNeighbouringLineSegments_Random)
 
             LineSegment &SmallestLine = smallestLineIt->l;
             Vector3f m_spher = cart2spherical(SmallestLine.l.m);
-            std::vector<int> idx;
-            int sectI = 0;
-            /*for (const auto &sector: tree.sectors) {
-                if (Eigen::AlignedBox<float, 3>(sector.bounds.m_start, sector.bounds.m_end).contains(
-                        cart2spherical(SmallestLine.m))
-                    && sector.bounds.d_bound_1.dot(SmallestLine.d) >= 0 //greater or equal, or just greater?
-                    && sector.bounds.d_bound_2.dot(SmallestLine.d) >= 0) {
-                    idx.push_back(sectI);
-                    const auto *node = sector.rootNode.get();
-                    Bounds b1 = sector.bounds;
-                    while (node != nullptr) {
-                        //Bounds b2 = sector.bounds;
-                        if(node->type == NodeType::moment)
-                        {
-                            b1.m_end[node->bound_component_idx] = node->m_component;
-                            //b2.m_start[sector.rootNode->bound_component_idx] = sector.rootNode->m_component;
-                        } else
-                        {
-                            b1.d_bound_1 = node->d_bound;
-                            //b1.d_bound_2 = bounds.d_bound_2;
-                        }
-
-
-                        if (Eigen::AlignedBox<float, 3>(b1.m_start, b1.m_end).contains(cart2spherical(SmallestLine.m))
-                            && b1.d_bound_1.dot(SmallestLine.d) >= 0 //greater or equal, or just greater?
-                            && b1.d_bound_2.dot(SmallestLine.d) >= 0) {
-                            idx.push_back(0);
-                            node = node->children[0].get();
-                        } else {
-                            idx.push_back(1);
-                            node = node->children[1].get();
-                        }
-                    }
-                    break;
-                }
-                sectI++;
-            }*/
+            auto idx = FindSegment(tree, SmallestLine);
 
             if (SmallestLine != result[0]->l) {
                 std::cout << std::endl;

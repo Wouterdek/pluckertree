@@ -30,7 +30,7 @@ public:
             : q(std::move(q)), h1(std::move(dirLowerBound)), h2(std::move(dirUpperBound)) {}
 
     double operator()(const Vector& x, Vector& grad)
-    {
+     {
         // Careful, don't disturb the big pile of math!
         number_t phi_k = x[0];
         number_t theta_k = x[1];
@@ -435,7 +435,8 @@ public:
         Vector3_t qpd = qp / qp_norm;
         auto u = (qp - q).norm();
 
-        auto calc_dist_for_gamma = [](const Vector3_t& qp, const Vector3_t& qpd, const Vector3_t& k, const Vector3_t& kd, const Vector3_t& h1, const Vector3_t& h2, number_t orientation, number_t sin_gamma)
+        auto calc_dist_for_gamma = [](const Vector3_t& qp, const Vector3_t& qpd, const Vector3_t& k, const Vector3_t& kd,
+                const Vector3_t& h1, const Vector3_t& h2, number_t orientation, number_t sin_gamma, number_t t1, number_t t2)
         {
             auto cos_gamma = std::sqrt(1 - sin_gamma * sin_gamma);
             Vector3_t da = orientation * qpd * cos_gamma + kd.cross(qpd) * sin_gamma;
@@ -454,7 +455,11 @@ public:
                 Vector h2_cross_k = h2.cross(k);
                 d_alpha = std::copysign(1.0f, h1.dot(h2_cross_k)) * h2_cross_k.normalized();
             }
-            auto v = (qp.cross(d_alpha) - k).norm();
+
+            //auto v = (qp.cross(d_alpha) - k).norm();
+            Vector3_t p = d_alpha.cross(k);
+            auto t = std::min(std::max(d_alpha.dot(qp), t1), t2);
+            auto v = ((p + t*d_alpha) - qp).norm();
             return v;
         };
 
@@ -466,58 +471,58 @@ public:
             number_t sin_gamma;
             if(qp_norm > t2_k_hypo_sqr)
             {
-                sin_gamma = std::min(r_k/std::sqrt(t2*t2 + r_k*r_k), (number_t)1.0f);
+                sin_gamma = std::min(r_k/std::sqrt(t2_k_hypo_sqr), (number_t)1.0f);
             }
             else if(qp_norm < t1_k_hypo_sqr)
             {
-                sin_gamma = std::min(r_k/std::sqrt(t1*t1 + r_k*r_k), (number_t)1.0f);
+                sin_gamma = std::min(r_k/std::sqrt(t1_k_hypo_sqr), (number_t)1.0f);
             }
             else
             {
                 sin_gamma = std::min(r_k/qp_norm, (number_t)1.0f);
             }
-            v = calc_dist_for_gamma(qp, qpd, k, kd, h1, h2, 1, sin_gamma);
+            v = calc_dist_for_gamma(qp, qpd, k, kd, h1, h2, 1, sin_gamma, t1, t2);
         }
         else if(t1 <= 0 && t2 <= 0)
         {
             number_t sin_gamma;
             if(qp_norm > t1_k_hypo_sqr)
             {
-                sin_gamma = std::min(r_k/std::sqrt(t1*t1 + r_k*r_k), (number_t)1.0f);
+                sin_gamma = std::min(r_k/std::sqrt(t1_k_hypo_sqr), (number_t)1.0f);
             }
             else if(qp_norm < t2_k_hypo_sqr)
             {
-                sin_gamma = std::min(r_k/std::sqrt(t2*t2 + r_k*r_k), (number_t)1.0f);
+                sin_gamma = std::min(r_k/std::sqrt(t2_k_hypo_sqr), (number_t)1.0f);
             }
             else
             {
                 sin_gamma = std::min(r_k/qp_norm, (number_t)1.0f);
             }
-            v = calc_dist_for_gamma(qp, qpd, k, kd, h1, h2, -1, sin_gamma);
+            v = calc_dist_for_gamma(qp, qpd, k, kd, h1, h2, -1, sin_gamma, t1, t2);
         }
         else
         {
             number_t sin_gamma_a;
             if(qp_norm > t2_k_hypo_sqr)
             {
-                sin_gamma_a = std::min(r_k/std::sqrt(t2*t2 + r_k*r_k), (number_t)1.0f);
+                sin_gamma_a = std::min(r_k/std::sqrt(t2_k_hypo_sqr), (number_t)1.0f);
             }
             else
             {
                 sin_gamma_a = std::min(r_k/qp_norm, (number_t)1.0f);
             }
-            number_t va = calc_dist_for_gamma(qp, qpd, k, kd, h1, h2, 1, sin_gamma_a);
+            number_t va = calc_dist_for_gamma(qp, qpd, k, kd, h1, h2, 1, sin_gamma_a, t1, t2);
 
             number_t sin_gamma_b;
             if(qp_norm > t1_k_hypo_sqr)
             {
-                sin_gamma_b = std::min(r_k/std::sqrt(t1*t1 + r_k*r_k), (number_t)1.0f);
+                sin_gamma_b = std::min(r_k/std::sqrt(t1_k_hypo_sqr), (number_t)1.0f);
             }
             else
             {
                 sin_gamma_b = std::min(r_k/qp_norm, (number_t)1.0f);
             }
-            number_t vb = calc_dist_for_gamma(qp, qpd, k, kd, h1, h2, -1, sin_gamma_b);
+            number_t vb = calc_dist_for_gamma(qp, qpd, k, kd, h1, h2, -1, sin_gamma_b, t1, t2);
 
             v = std::min(va, vb);
         }
@@ -1004,7 +1009,7 @@ void show_me_the_grid(std::string& file,
     Eigen::Vector3f q(25.216011, 86.2393799, 64.2581253);
     Eigen::Vector3f q_normal(0.742901862, 0.662636876, 0.0949169919);*/
 
-    float resolution = 100;
+    float resolution = 300;
     //auto data = CalculateBallSlice(q, q_normal, dlb, dub, mlb, mub, resolution);
     auto data = CalculateBallSlice(q, dlb, dub, mlb, mub, resolution);
 

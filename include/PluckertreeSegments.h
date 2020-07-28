@@ -245,7 +245,7 @@ public:
         {
             const auto& s = c->*line_member;
             Eigen::Vector3f p = s.l.d.cross(s.l.m);
-            float t = p.dot(q);
+            float t = s.l.d.dot(q);
             t = std::min(std::max(t, s.t1), s.t2);
             Eigen::Vector3f v = (p + t*s.l.d) - q;
             return v.norm();
@@ -570,27 +570,30 @@ private:
         auto dMaxPossibleVariance = (dMaxSin * dMaxSin)/4; //Assumes angle between bounds >= 90°
         auto dVarianceNormalized = dVariance / dMaxPossibleVariance;
 
-        // Calculate t variance
-        auto t1Var = calc_pop_variance(lines_begin, lines_end, [](const Content& c){ return (c.*line_member).t1; });
-        auto t2Var = calc_pop_variance(lines_begin, lines_end, [](const Content& c){ return (c.*line_member).t2; });
-        auto tBoundDist = bounds.t2Max - bounds.t1Min;
-        auto tVarNormalized = (t1Var+t2Var)*2 / (tBoundDist * tBoundDist); // ((t1Var+t2Var)/2)/(tBoundDist * tBoundDist)/4;
-
-        if(tVarNormalized > dVarianceNormalized/2 && tVarNormalized > mVariance/2) //TODO: temp div for test
+        if(lineCount > 2)
         {
-            TSplitInfo<LineIt> splitInfo = SplitOnT(lines_begin, lines_end, bounds.t1Min, bounds.t2Max);
-            pivot = splitInfo.pivot;
+            // Calculate t variance
+            auto t1Var = calc_pop_variance(lines_begin, lines_end, [](const Content& c){ return (c.*line_member).t1; });
+            auto t2Var = calc_pop_variance(lines_begin, lines_end, [](const Content& c){ return (c.*line_member).t2; });
+            auto tBoundDist = bounds.t2Max - bounds.t1Min;
+            auto tVarNormalized = (t1Var+t2Var)*2 / (tBoundDist * tBoundDist); // ((t1Var+t2Var)/2)/(tBoundDist * tBoundDist)/4;
 
-            //std::cout << "t split" << std::endl;
+            if(tVarNormalized > dVarianceNormalized/2 && tVarNormalized > mVariance/2) //TODO: temp div for test
+            {
+                TSplitInfo<LineIt> splitInfo = SplitOnT(lines_begin, lines_end, bounds.t1Min, bounds.t2Max);
+                pivot = splitInfo.pivot;
 
-            subBounds1.t1Min = splitInfo.c1t1;
-            subBounds1.t2Max = splitInfo.c1t2;
-            subBounds2.t1Min = splitInfo.c2t1;
-            subBounds2.t2Max = splitInfo.c2t2;
+                //std::cout << "t split" << std::endl;
 
-            node = std::make_unique<Node>(splitInfo.c1t1, splitInfo.c1t2, splitInfo.c2t1, splitInfo.c2t2, *pivot);
-            node->children[0] = BuildNode(splitInfo.c1Begin, splitInfo.c2Begin, subBounds1, level + 1);
-            node->children[1] = BuildNode(splitInfo.c2Begin, lines_end, subBounds2, level + 1);
+                subBounds1.t1Min = splitInfo.c1t1;
+                subBounds1.t2Max = splitInfo.c1t2;
+                subBounds2.t1Min = splitInfo.c2t1;
+                subBounds2.t2Max = splitInfo.c2t2;
+
+                node = std::make_unique<Node>(splitInfo.c1t1, splitInfo.c1t2, splitInfo.c2t1, splitInfo.c2t2, *pivot);
+                node->children[0] = BuildNode(splitInfo.c1Begin, splitInfo.c2Begin, subBounds1, level + 1);
+                node->children[1] = BuildNode(splitInfo.c2Begin, lines_end, subBounds2, level + 1);
+            }
         }
 
         if(node == nullptr)
@@ -676,9 +679,9 @@ private:
         });
 
         float c1t1 = ((*child_lines_begin).*line_member).t1;
-        float c1t2 = 0;
+        float c1t2 = ((*child_lines_begin).*line_member).t2;
         float c2t1 = ((*lines_end).*line_member).t1;
-        float c2t2 = 0;
+        float c2t2 = ((*lines_end).*line_member).t2;
         auto lineCount = std::distance(child_lines_begin, lines_end);
         for(unsigned int i = 0; i < lineCount/2; ++i)
         {
@@ -690,14 +693,14 @@ private:
         }
         if(lineCount % 2 == 1)
         {
-            auto idx = (lineCount/2)+1;
+            auto idx = lineCount/2;
             const LineSegment& middle = ((*(child_lines_begin+idx)).*line_member);
             c2t1 = std::min(c2t1, middle.t1);
             c2t2 = std::max(c2t2, middle.t2);
         }
 
-        LineIt c1Begin = lines_begin + 1;
-        LineIt c2Begin = c1Begin + (std::distance(c1Begin, lines_end)/2);
+        LineIt c1Begin = child_lines_begin;
+        LineIt c2Begin = c1Begin + (lineCount/2);
 
         return TSplitInfo(c1t1, c1t2, c2t1, c2t2, pivot, c1Begin, c2Begin);
     }
