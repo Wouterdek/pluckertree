@@ -570,7 +570,7 @@ private:
         auto dMaxPossibleVariance = (dMaxSin * dMaxSin)/4; //Assumes angle between bounds >= 90°
         auto dVarianceNormalized = dVariance / dMaxPossibleVariance;
 
-        if(lineCount > 2)
+        //if(lineCount > 2)
         {
             // Calculate t variance
             auto t1Var = calc_pop_variance(lines_begin, lines_end, [](const Content& c){ return (c.*line_member).t1; });

@@ -34,7 +34,7 @@ float calc_MAD(Iter begin, Iter end, Accessor f)
         return std::abs(f(v1) - median) < std::abs(f(v2) - median);
     });
 
-    auto mad = f(*(begin + ((end - begin)/2)));
+    auto mad = std::abs(f(*(begin + ((end - begin)/2))) - median);
 
     return mad;
 }
