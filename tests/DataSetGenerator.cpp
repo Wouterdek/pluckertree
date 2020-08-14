@@ -39,6 +39,26 @@ std::vector<LineWrapper> GenerateRandomLines(unsigned int seed, unsigned int lin
     return lines;
 }
 
+std::vector<LineWrapper> SampleRandomLines(const std::vector<LineWrapper>& all_lines, unsigned int seed, unsigned int lineCount)
+{
+    if(lineCount > all_lines.size())
+    {
+        throw std::runtime_error("Not enough lines in dataset");
+    }
+    std::vector<LineWrapper> lines = all_lines;
+    auto lines_new_end = lines.end();
+
+    std::default_random_engine rng{seed};
+    auto nbLinesToRemove = all_lines.size() - lineCount;
+    for (std::vector<LineWrapper>::size_type i = 0; i < nbLinesToRemove; ++i) {
+        std::uniform_int_distribution<std::vector<LineWrapper>::size_type> rand_i(0, std::distance(lines.begin(), lines_new_end)-1);
+        std::iter_swap(lines.begin() + rand_i(rng), lines_new_end-1);
+        lines_new_end--;
+    }
+    lines.erase(lines_new_end, lines.end());
+    return lines;
+}
+
 std::vector<LineWrapper> GenerateParallelLines(unsigned int seed, unsigned int lineCount, float maxDist, const Vector3f& direction)
 {
     std::vector<LineWrapper> lines{};
@@ -67,12 +87,17 @@ std::vector<LineWrapper> GenerateEquiDistantLines(unsigned int seed, unsigned in
     std::default_random_engine rng{seed};
     std::uniform_real_distribution<float> dist(0, 1.0);
     for (int i = 0; i < lineCount; ++i) {
-        Vector3f p = Vector3f(dist(rng), dist(rng), dist(rng));
-        p.normalize();
-        p *= distance;
+        // Generate point p which line runs through
+        Vector3f p_hat = Vector3f(dist(rng), dist(rng), dist(rng));
+        p_hat.normalize();
+
+        // Generate random directional vector, orthogonal to p
         Vector3f d = Vector3f(dist(rng), dist(rng), dist(rng));
+        d -= p_hat * p_hat.dot(d);
         d.normalize();
-        lines.emplace_back(Line::FromPointAndDirection(p, d));
+
+        Vector3f m = p_hat.cross(d) * distance;
+        lines.emplace_back(Line(d, m));
     }
     return lines;
 }
@@ -87,7 +112,7 @@ std::vector<LineWrapper> GenerateEqualMomentLines(unsigned int seed, unsigned in
 
     Vector3f moment_d = moment.normalized();
     Vector3f baseU = Vector3f(unitDist(rng), unitDist(rng), unitDist(rng));
-    baseU -= moment_d * moment.dot(baseU);
+    baseU -= moment_d * moment_d.dot(baseU);
     baseU.normalize();
     Vector3f baseV = baseU.cross(moment_d);
 
@@ -126,6 +151,17 @@ std::vector<LineSegmentWrapper> GenerateRandomLineSegments(unsigned int seed, un
     }
 
     return lines;
+}
+
+void ModifyLineSegmentLength(std::vector<LineSegmentWrapper>& l, float length)
+{
+    float half_length = length/2.0f;
+    for(auto& s : l)
+    {
+        float mid = (s.l.t2 - s.l.t1)/2.0f;
+        s.l.t1 = mid - half_length;
+        s.l.t2 = mid + half_length;
+    }
 }
 
 std::vector<Vector3f> GenerateRandomPoints(unsigned int seed, unsigned int pointCount, float maxDist)

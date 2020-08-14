@@ -472,6 +472,7 @@ public:
             } else
             {
                 moment_min_hints[i] = sector.bounds.m_start + (sector.bounds.m_end - sector.bounds.m_start)/2;
+                //FindMinDist because no FindMinHitDist has been defined for line segments and FindMinDist will always return a lower value so no invalid results will be returned.
                 minimumDistances[i] = FindMinDist(query_point, sector.bounds.d_bound_1, sector.bounds.d_bound_2, sector.bounds.m_start, sector.bounds.m_end, sector.bounds.t1Min, sector.bounds.t2Max, moment_min_hints[i]);
             }
         }
@@ -532,18 +533,11 @@ private:
         std::unique_ptr<Node> node = nullptr;
         //NodeType type;
         uint8_t splitComponent = 0;
-        LineIt pivot;
         Bounds subBounds1 = bounds;
         Bounds subBounds2 = bounds;
+        LineIt pivot;
 
-        // Calculate max moment variance
-        Eigen::Array3f mVarianceVect = calc_vec3_pop_variance(lines_begin, lines_end, [](const Content& c){return cart2spherical((c.*line_member).l.m); });
-        Eigen::Array3f mVarianceNormFact = (bounds.m_end - bounds.m_start).array();
-        mVarianceNormFact = mVarianceNormFact * mVarianceNormFact;
-        mVarianceNormFact /= 4;
-        mVarianceVect = mVarianceVect.cwiseQuotient(mVarianceNormFact);
-        auto mVariance = mVarianceVect.maxCoeff(&splitComponent);
-
+        ///////////////////////////////
         // Calculate directional variance
         // project direction vectors to bound domain, calculate variance of sine of angle to bound, and use this to decide NodeType
         const Eigen::Vector3f& cur_bound = bounds.d_bound_1;
@@ -562,43 +556,66 @@ private:
             }
             return sin;
         };
-        auto dVariance = calc_pop_variance(lines_begin, lines_end, [&bound_domain_normal, &cur_bound, calc_sine](const Content& c){
+        /*auto dVariance = calc_pop_variance(lines_begin, lines_end, [&bound_domain_normal, &cur_bound, calc_sine](const Content& c){
             const auto& line = (c.*line_member).l;
             return calc_sine(line.d, bound_domain_normal, cur_bound);
         });
         auto dMaxSin = bounds.d_bound_1.cross(bounds.d_bound_2).norm();
         auto dMaxPossibleVariance = (dMaxSin * dMaxSin)/4; //Assumes angle between bounds >= 90°
-        auto dVarianceNormalized = dVariance / dMaxPossibleVariance;
+        auto dVarianceNormalized = dVariance / dMaxPossibleVariance;*/
+        ///////////////////////////////
 
-        //if(lineCount > 2)
-        {
-            // Calculate t variance
-            auto t1Var = calc_pop_variance(lines_begin, lines_end, [](const Content& c){ return (c.*line_member).t1; });
-            auto t2Var = calc_pop_variance(lines_begin, lines_end, [](const Content& c){ return (c.*line_member).t2; });
-            auto tBoundDist = bounds.t2Max - bounds.t1Min;
-            auto tVarNormalized = (t1Var+t2Var)*2 / (tBoundDist * tBoundDist); // ((t1Var+t2Var)/2)/(tBoundDist * tBoundDist)/4;
+        bool splitOnDir = false;
+        bool splitOnT = false;
+        ///////////////////////////////
+        // Calculate max moment variance
+#define M_LEVEL_ALTERNATING
+#if defined(M_MAX_VAR)
+        Eigen::Array3f mVarianceVect = calc_vec3_pop_variance(lines_begin, lines_end, [](const Content& c){return cart2spherical((c.*line_member).l.m); });
+        Eigen::Array3f mVarianceNormFact = (bounds.m_end - bounds.m_start).array();
+        mVarianceNormFact = mVarianceNormFact * mVarianceNormFact;
+        mVarianceNormFact /= 4;
+        mVarianceVect = mVarianceVect.cwiseQuotient(mVarianceNormFact);
+        auto mVariance = mVarianceVect.maxCoeff(&splitComponent);
 
-            if(tVarNormalized > dVarianceNormalized/2 && tVarNormalized > mVariance/2) //TODO: temp div for test
-            {
-                TSplitInfo<LineIt> splitInfo = SplitOnT(lines_begin, lines_end, bounds.t1Min, bounds.t2Max);
-                pivot = splitInfo.pivot;
+        // Calculate t variance
+        auto t1Var = calc_pop_variance(lines_begin, lines_end, [](const Content& c){ return (c.*line_member).t1; });
+        auto t2Var = calc_pop_variance(lines_begin, lines_end, [](const Content& c){ return (c.*line_member).t2; });
+        auto tBoundDist = bounds.t2Max - bounds.t1Min;
+        auto tVarNormalized = (t1Var+t2Var)*2 / (tBoundDist * tBoundDist); // ((t1Var+t2Var)/2)/(tBoundDist * tBoundDist)/4;
+        splitOnT = tVarNormalized > dVarianceNormalized && tVarNormalized > mVariance;
 
-                //std::cout << "t split" << std::endl;
-
-                subBounds1.t1Min = splitInfo.c1t1;
-                subBounds1.t2Max = splitInfo.c1t2;
-                subBounds2.t1Min = splitInfo.c2t1;
-                subBounds2.t2Max = splitInfo.c2t2;
-
-                node = std::make_unique<Node>(splitInfo.c1t1, splitInfo.c1t2, splitInfo.c2t1, splitInfo.c2t2, *pivot);
-                node->children[0] = BuildNode(splitInfo.c1Begin, splitInfo.c2Begin, subBounds1, level + 1);
-                node->children[1] = BuildNode(splitInfo.c2Begin, lines_end, subBounds2, level + 1);
-            }
+        if(!splitOnT){
+            //splitOnDir = dVarianceNormalized > mVariance;
+            splitOnDir = v < 0.25;
         }
+        unsigned int pivot_i = lineCount/2;
+#elif defined(M_LEVEL_ALTERNATING)
+        splitComponent = level % 5;
+        splitOnDir = (level % 5) == 3;
+        splitOnT = (level % 5) == 4;
+        unsigned int pivot_i = lineCount/2;
+#endif
 
-        if(node == nullptr)
+        if(splitOnT)
         {
-            if(dVarianceNormalized > mVariance)
+            TSplitInfo<LineIt> splitInfo = SplitOnT(lines_begin, lines_end, bounds.t1Min, bounds.t2Max);
+            pivot = splitInfo.pivot;
+
+            //std::cout << "t split" << std::endl;
+
+            subBounds1.t1Min = splitInfo.c1t1;
+            subBounds1.t2Max = splitInfo.c1t2;
+            subBounds2.t1Min = splitInfo.c2t1;
+            subBounds2.t2Max = splitInfo.c2t2;
+
+            node = std::make_unique<Node>(splitInfo.c1t1, splitInfo.c1t2, splitInfo.c2t1, splitInfo.c2t2, *pivot);
+            node->children[0] = BuildNode(splitInfo.c1Begin, splitInfo.c2Begin, subBounds1, level + 1);
+            node->children[1] = BuildNode(splitInfo.c2Begin, lines_end, subBounds2, level + 1);
+        }
+        else
+        {
+            if(splitOnDir)
             {
                 // calculate new bound vector: calc cross product of dir vectors with cur bound vector to obtain sin,
                 // sort by sin, take median, new bound vector is cross product of bound_domain_normal with median dir vect
@@ -628,7 +645,8 @@ private:
                     const auto& l2 = (c2.*line_member).l;
                     return cart2spherical(l1.m)[splitComponent] < cart2spherical(l2.m)[splitComponent];
                 });
-                pivot = lines_begin + (lines_end - lines_begin)/2;
+                pivot = lines_begin + pivot_i;
+
                 const auto& pivotLine = ((*pivot).*line_member).l;
                 auto splitCompVal = cart2spherical(pivotLine.m)[splitComponent];
                 subBounds1.m_end[splitComponent] = splitCompVal;

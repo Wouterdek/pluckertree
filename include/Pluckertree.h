@@ -633,8 +633,9 @@ private:
         bool splitOnDir = false;
         ///////////////////////////////
         // Calculate max moment variance
-#define M_MAX_VAR
+#define M_LEVEL_ALTERNATING
 #if defined(M_MAX_VAR) || defined(M_MIN_VAR)
+        #undef M_MAX_VAR
         Eigen::Array3f mVarianceVect = calc_vec3_pop_variance(lines_begin, lines_end, [](const Content& c){return cart2spherical((c.*line_member).m); });
         Eigen::Array3f mVarianceNormFact = (bounds.m_end - bounds.m_start).array();
         mVarianceNormFact = mVarianceNormFact * mVarianceNormFact;
@@ -654,6 +655,7 @@ private:
         splitOnDir = v < 0.25;
         unsigned int pivot_i = lineCount/2;
 #elif defined(M_MAX_MAD) || defined(M_MIN_MAD)
+        #undef M_MAX_MAD
         float phi_mad = calc_MAD(lines_begin, lines_end, [](const Content& c){return cart2spherical((c.*line_member).m)[0]; });
         float theta_mad = calc_MAD(lines_begin, lines_end, [](const Content& c){return cart2spherical((c.*line_member).m)[1]; });
         float radius_mad = calc_MAD(lines_begin, lines_end, [](const Content& c){return cart2spherical((c.*line_member).m)[2]; });

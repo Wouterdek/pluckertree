@@ -15,6 +15,9 @@ using namespace Eigen;
 
 const std::string output_path("/home/wouter/Documents/pluckertree_benchmarks/");
 
+//auto lines = LoadFromFile("/home/wouter/Documents/sphere_lines.txt");
+
+
 template<typename size_type>
 void parallel_for(size_type arr_size, std::function<void(size_type)> f)
 {
@@ -57,14 +60,35 @@ void parallel_for(size_type arr_size, std::function<void(size_type)> f)
 
 TEST(Benchmarks, DISABLED_NearestNeighbour_Lines_Random)
 {
-    std::fstream out(output_path+"NearestNeighbour_Lines_Random.txt", std::fstream::out | std::fstream::app);
+    std::random_device dev{};
+
+    bool isLogPlot = true;
+    bool isSqrtPlot = false;
+
+    std::string filename;
+    std::vector<unsigned int> bench_line_counts;
+    if(isLogPlot)
+    {
+        filename = output_path+"NearestNeighbour_Lines_Random_log.txt";
+        bench_line_counts = {100, 1000, 10000, 100000, 1000000};
+    }
+    else if(isSqrtPlot)
+    {
+        filename = output_path+"NearestNeighbour_Lines_Random_sqrt.txt";
+        bench_line_counts = {40000, 90000, 160000, 250000, 360000};
+    }
+    else
+    {
+        filename = output_path+"NearestNeighbour_Lines_Random.txt";
+        bench_line_counts = {100, 250000, 500000, 750000, 1000000};
+    }
+
+    std::fstream out(filename, std::fstream::out | std::fstream::app);
     if(out.fail())
     {
         std::cerr << "Failed to open file" << std::endl;
         return;
     }
-
-    std::vector<unsigned int> bench_line_counts = {100, 250000, 500000, 750000, 1000000};
 
     for(int bench_type_i = 0; bench_type_i < bench_line_counts.size(); ++bench_type_i)
     {
@@ -72,57 +96,39 @@ TEST(Benchmarks, DISABLED_NearestNeighbour_Lines_Random)
 
         out << "BENCH INFO" << std::endl;
         unsigned int line_count = bench_line_counts[bench_type_i];
-        unsigned int query_count = 10;
-        unsigned int iteration_count = 10;
+        unsigned int query_count = 100;
         float max_dist = 100;
 
         out << "Line count: " << line_count << std::endl;
         out << "Query count: " << query_count << std::endl;
-        out << "Iteration count: " << iteration_count << std::endl;
         out << "Maximum distance: " << max_dist << std::endl;
 
         out << "START BENCH" << std::endl;
-        for(int i = 0; i < iteration_count; ++i)
-        {
-            std::cout << "Iteration " << (i+1) << " of " << iteration_count << std::endl;
+        std::mutex mutex;
+        parallel_for(query_count, std::function([&out, &mutex, &dev, max_dist, query_count, line_count](unsigned int query_i){
             unsigned int query_seed, line_seed;
             {
-                std::random_device dev{};
+                const std::lock_guard<std::mutex> l(mutex);
                 query_seed = dev();
                 line_seed = dev();
             }
 
-            out << "Query generation seed: " << query_seed << std::endl;
-            out << "Line generation seed: " << line_seed << std::endl;
-
-            //Generate lines and tree
-            std::cout << "Generating lines & tree\r";
+            //Generate line, tree and query
             std::vector<LineWrapper> lines = GenerateRandomLines(line_seed, line_count, max_dist);
             auto tree = TreeBuilder<LineWrapper, &LineWrapper::l>::Build(lines.begin(), lines.end());
+            auto query_point = GenerateRandomPoints(query_seed, 1, max_dist)[0];
 
-            //Generate query points
-            std::cout << "Generating query points\r";
-            auto query_points = GenerateRandomPoints(query_seed, query_count, max_dist);
+            //Perform query
+            std::array<const LineWrapper *, 1> result{nullptr};
+            float result_dist = 1E99;
+            auto nbResultsFound = tree.FindNeighbours(query_point, result.begin(), result.end(), result_dist);
 
-            //Perform queries
-            out << "START DATA" << std::endl;
-            std::cout << "Running queries        \r";
-            std::mutex mutex;
-            parallel_for(query_points.size(), std::function([&query_points, &tree, &out, &mutex](std::vector<Vector3f>::size_type query_i){
-                const auto& query = query_points[query_i];
-                std::array<const LineWrapper *, 1> result{nullptr};
-                float result_dist = 1E99;
-                auto nbResultsFound = tree.FindNeighbours(query, result.begin(), result.end(), result_dist);
-
-                {
-                    const std::lock_guard<std::mutex> l(mutex);
-                    out << Diag::visited << ";" << Diag::minimizations << std::endl;
-                }
-            }));
-            std::cout << "                       \r";
-            out << "END DATA" << std::endl;
-            out.flush();
-        }
+            {
+                const std::lock_guard<std::mutex> l(mutex);
+                out << Diag::visited << ";" << Diag::minimizations << std::endl;
+            }
+        }));
+        out.flush();
         out << "END BENCH" << std::endl << std::endl;
     }
 
@@ -132,6 +138,7 @@ TEST(Benchmarks, DISABLED_NearestNeighbour_Lines_Random)
 
 TEST(Benchmarks, DISABLED_NearestHit_Lines_Random)
 {
+    std::random_device dev{};
     std::fstream out(output_path+"NearestHit_Lines_Random.txt", std::fstream::out | std::fstream::app);
     if(out.fail())
     {
@@ -139,7 +146,8 @@ TEST(Benchmarks, DISABLED_NearestHit_Lines_Random)
         return;
     }
 
-    std::vector<unsigned int> bench_line_counts = {100, 250000, 500000, 750000, 1000000};
+    //std::vector<unsigned int> bench_line_counts = {100, 250000, 500000, 750000, 1000000};
+    std::vector<unsigned int> bench_line_counts = {100, 1000, 10000, 100000, 1000000};
 
     for(int bench_type_i = 0; bench_type_i < bench_line_counts.size(); ++bench_type_i)
     {
@@ -147,59 +155,41 @@ TEST(Benchmarks, DISABLED_NearestHit_Lines_Random)
 
         out << "BENCH INFO" << std::endl;
         unsigned int line_count = bench_line_counts[bench_type_i];
-        unsigned int query_count = 10;
-        unsigned int iteration_count = 10;
+        unsigned int query_count = 100;
         float max_dist = 100;
 
         out << "Line count: " << line_count << std::endl;
         out << "Query count: " << query_count << std::endl;
-        out << "Iteration count: " << iteration_count << std::endl;
         out << "Maximum distance: " << max_dist << std::endl;
 
         out << "START BENCH" << std::endl;
-        for(int i = 0; i < iteration_count; ++i)
-        {
-            std::cout << "Iteration " << (i+1) << " of " << iteration_count << std::endl;
+        std::mutex mutex;
+        parallel_for(query_count, std::function([&out, &mutex, &dev, max_dist, query_count, line_count](unsigned int query_i){
             unsigned int query_seed, line_seed;
             {
-                std::random_device dev{};
+                const std::lock_guard<std::mutex> l(mutex);
                 query_seed = dev();
                 line_seed = dev();
             }
 
-            out << "Query generation seed: " << query_seed << std::endl;
-            out << "Line generation seed: " << line_seed << std::endl;
-
-            //Generate lines and tree
-            std::cout << "Generating lines & tree\r";
+            //Generate line, tree, query
             std::vector<LineWrapper> lines = GenerateRandomLines(line_seed, line_count, max_dist);
             auto tree = TreeBuilder<LineWrapper, &LineWrapper::l>::Build(lines.begin(), lines.end());
+            auto query_point = GenerateRandomPoints(query_seed, 1, max_dist)[0];
+            auto query_normal = GenerateRandomNormals(query_seed+1, 1)[0];
 
-            //Generate query points
-            std::cout << "Generating query points\r";
-            auto query_points = GenerateRandomPoints(query_seed, query_count, max_dist);
-            auto query_normals = GenerateRandomNormals(query_seed, line_count);
+            //Perform query
+            std::array<const LineWrapper *, 1> result{nullptr};
+            float result_dist = 1E99;
+            auto nbResultsFound = tree.FindNearestHits(query_point, query_normal, result.begin(), result.end(), result_dist);
 
-            //Perform queries
-            out << "START DATA" << std::endl;
-            std::cout << "Running queries        \r";
-            std::mutex mutex;
-            parallel_for(query_points.size(), std::function([&query_points, &query_normals, &tree, &out, &mutex](std::vector<Vector3f>::size_type query_i){
-                const auto& query = query_points[query_i];
-                const auto& query_normal = query_points[query_i];
-                std::array<const LineWrapper *, 1> result{nullptr};
-                float result_dist = 1E99;
-                auto nbResultsFound = tree.FindNearestHits(query, query_normal, result.begin(), result.end(), result_dist);
+            {
+                const std::lock_guard<std::mutex> l(mutex);
+                out << Diag::visited << ";" << Diag::minimizations << std::endl;
+            }
+        }));
+        out.flush();
 
-                {
-                    const std::lock_guard<std::mutex> l(mutex);
-                    out << Diag::visited << ";" << Diag::minimizations << std::endl;
-                }
-            }));
-            std::cout << "                       \r";
-            out << "END DATA" << std::endl;
-            out.flush();
-        }
         out << "END BENCH" << std::endl << std::endl;
     }
 
@@ -209,6 +199,8 @@ TEST(Benchmarks, DISABLED_NearestHit_Lines_Random)
 
 TEST(Benchmarks, DISABLED_NearestNeighbour_LineSegments_Random)
 {
+    std::random_device dev{};
+
     std::fstream out(output_path+"NearestNeighbour_LineSegments_Random.txt", std::fstream::out | std::fstream::app);
     if(out.fail())
     {
@@ -216,7 +208,8 @@ TEST(Benchmarks, DISABLED_NearestNeighbour_LineSegments_Random)
         return;
     }
 
-    std::vector<unsigned int> bench_line_counts = {100, 250000, 500000, 750000, 1000000};
+    //std::vector<unsigned int> bench_line_counts = {100, 250000, 500000, 750000, 1000000};
+    std::vector<unsigned int> bench_line_counts = {100, 1000, 10000, 100000, 1000000};
 
     for(int bench_type_i = 0; bench_type_i < bench_line_counts.size(); ++bench_type_i)
     {
@@ -224,57 +217,39 @@ TEST(Benchmarks, DISABLED_NearestNeighbour_LineSegments_Random)
 
         out << "BENCH INFO" << std::endl;
         unsigned int line_count = bench_line_counts[bench_type_i];
-        unsigned int query_count = 10;
-        unsigned int iteration_count = 10;
+        unsigned int query_count = 100;
         float max_dist = 100;
 
         out << "Line count: " << line_count << std::endl;
         out << "Query count: " << query_count << std::endl;
-        out << "Iteration count: " << iteration_count << std::endl;
         out << "Maximum distance: " << max_dist << std::endl;
 
         out << "START BENCH" << std::endl;
-        for(int i = 0; i < iteration_count; ++i)
-        {
-            std::cout << "Iteration " << (i+1) << " of " << iteration_count << std::endl;
+        std::mutex mutex;
+        parallel_for(query_count, std::function([&out, &mutex, &dev, max_dist, query_count, line_count](unsigned int query_i){
             unsigned int query_seed, line_seed;
             {
-                std::random_device dev{};
+                const std::lock_guard<std::mutex> l(mutex);
                 query_seed = dev();
                 line_seed = dev();
             }
 
-            out << "Query generation seed: " << query_seed << std::endl;
-            out << "Line generation seed: " << line_seed << std::endl;
-
-            //Generate lines and tree
-            std::cout << "Generating lines & tree\r";
+            //Generate line, tree, query
             auto lines = GenerateRandomLineSegments(line_seed, line_count, max_dist, -100, 100);
             auto tree = segments::TreeBuilder<LineSegmentWrapper, &LineSegmentWrapper::l>::Build(lines.begin(), lines.end());
+            auto query_point = GenerateRandomPoints(query_seed, 1, max_dist)[0];
 
-            //Generate query points
-            std::cout << "Generating query points\r";
-            auto query_points = GenerateRandomPoints(query_seed, query_count, max_dist);
+            //Perform query
+            std::array<const LineSegmentWrapper *, 1> result{nullptr};
+            float result_dist = 1E99;
+            auto nbResultsFound = tree.FindNeighbours(query_point, result.begin(), result.end(), result_dist);
 
-            //Perform queries
-            out << "START DATA" << std::endl;
-            std::cout << "Running queries        \r";
-            std::mutex mutex;
-            parallel_for(query_points.size(), std::function([&query_points, &tree, &out, &mutex](std::vector<Vector3f>::size_type query_i){
-                const auto& query = query_points[query_i];
-                std::array<const LineSegmentWrapper *, 1> result{nullptr};
-                float result_dist = 1E99;
-                auto nbResultsFound = tree.FindNeighbours(query, result.begin(), result.end(), result_dist);
-
-                {
-                    const std::lock_guard<std::mutex> l(mutex);
-                    out << Diag::visited << ";" << Diag::minimizations << std::endl;
-                }
-            }));
-            std::cout << "                       \r";
-            out << "END DATA" << std::endl;
-            out.flush();
-        }
+            {
+                const std::lock_guard<std::mutex> l(mutex);
+                out << Diag::visited << ";" << Diag::minimizations << std::endl;
+            }
+        }));
+        out.flush();
         out << "END BENCH" << std::endl << std::endl;
     }
 
@@ -284,6 +259,8 @@ TEST(Benchmarks, DISABLED_NearestNeighbour_LineSegments_Random)
 
 TEST(Benchmarks, DISABLED_NearestHit_LineSegments_Random)
 {
+    std::random_device dev{};
+
     std::fstream out(output_path+"NearestHit_LineSegments_Random.txt", std::fstream::out | std::fstream::app);
     if(out.fail())
     {
@@ -291,7 +268,8 @@ TEST(Benchmarks, DISABLED_NearestHit_LineSegments_Random)
         return;
     }
 
-    std::vector<unsigned int> bench_line_counts = {100, 250000, 500000, 750000, 1000000};
+    //std::vector<unsigned int> bench_line_counts = {100, 250000, 500000, 750000, 1000000};
+    std::vector<unsigned int> bench_line_counts = {100, 1000, 10000, 100000, 1000000};
 
     for(int bench_type_i = 0; bench_type_i < bench_line_counts.size(); ++bench_type_i)
     {
@@ -299,59 +277,103 @@ TEST(Benchmarks, DISABLED_NearestHit_LineSegments_Random)
 
         out << "BENCH INFO" << std::endl;
         unsigned int line_count = bench_line_counts[bench_type_i];
-        unsigned int query_count = 10;
-        unsigned int iteration_count = 10;
+        unsigned int query_count = 100;
         float max_dist = 100;
 
         out << "Line count: " << line_count << std::endl;
         out << "Query count: " << query_count << std::endl;
-        out << "Iteration count: " << iteration_count << std::endl;
         out << "Maximum distance: " << max_dist << std::endl;
 
         out << "START BENCH" << std::endl;
-        for(int i = 0; i < iteration_count; ++i)
-        {
-            std::cout << "Iteration " << (i+1) << " of " << iteration_count << std::endl;
+        std::mutex mutex;
+        parallel_for(query_count, std::function([&out, &mutex, &dev, max_dist, query_count, line_count](unsigned int query_i){
             unsigned int query_seed, line_seed;
             {
-                std::random_device dev{};
+                const std::lock_guard<std::mutex> l(mutex);
                 query_seed = dev();
                 line_seed = dev();
             }
 
-            out << "Query generation seed: " << query_seed << std::endl;
-            out << "Line generation seed: " << line_seed << std::endl;
-
-            //Generate lines and tree
-            std::cout << "Generating lines & tree\r";
+            //Generate line, tree, query
             auto lines = GenerateRandomLineSegments(line_seed, line_count, max_dist, -100, 100);
             auto tree = segments::TreeBuilder<LineSegmentWrapper, &LineSegmentWrapper::l>::Build(lines.begin(), lines.end());
+            auto query_point = GenerateRandomPoints(query_seed, 1, max_dist)[0];
+            auto query_normal = GenerateRandomNormals(query_seed+1, 1)[0];
 
-            //Generate query points
-            std::cout << "Generating query points\r";
-            auto query_points = GenerateRandomPoints(query_seed, query_count, max_dist);
-            auto query_normals = GenerateRandomNormals(query_seed, line_count);
+            //Perform query
+            std::array<const LineSegmentWrapper *, 1> result{nullptr};
+            float result_dist = 1E99;
+            auto nbResultsFound = tree.FindNearestHits(query_point, query_normal, result.begin(), result.end(), result_dist);
 
-            //Perform queries
-            out << "START DATA" << std::endl;
-            std::cout << "Running queries        \r";
-            std::mutex mutex;
-            parallel_for(query_points.size(), std::function([&query_points, &query_normals, &tree, &out, &mutex](std::vector<Vector3f>::size_type query_i){
-                const auto& query = query_points[query_i];
-                const auto& query_normal = query_points[query_i];
-                std::array<const LineSegmentWrapper *, 1> result{nullptr};
-                float result_dist = 1E99;
-                auto nbResultsFound = tree.FindNearestHits(query, query_normal, result.begin(), result.end(), result_dist);
+            {
+                const std::lock_guard<std::mutex> l(mutex);
+                out << Diag::visited << ";" << Diag::minimizations << std::endl;
+            }
+        }));
+        out.flush();
 
-                {
-                    const std::lock_guard<std::mutex> l(mutex);
-                    out << Diag::visited << ";" << Diag::minimizations << std::endl;
-                }
-            }));
-            std::cout << "                       \r";
-            out << "END DATA" << std::endl;
-            out.flush();
-        }
+        out << "END BENCH" << std::endl << std::endl;
+    }
+
+    out.flush();
+    out.close();
+}
+
+TEST(Benchmarks, DISABLED_NearestNeighbour_Short_LineSegments_Random)
+{
+    std::random_device dev{};
+
+    std::fstream out(output_path+"NearestNeighbour_Short_LineSegments_Random.txt", std::fstream::out | std::fstream::app);
+    if(out.fail())
+    {
+        std::cerr << "Failed to open file" << std::endl;
+        return;
+    }
+
+    //std::vector<unsigned int> bench_line_counts = {100, 250000, 500000, 750000, 1000000};
+    //std::vector<unsigned int> bench_line_counts = {100, 1000, 10000, 100000, 1000000};
+    std::vector<unsigned int> bench_line_counts = {128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288};
+
+    for(int bench_type_i = 0; bench_type_i < bench_line_counts.size(); ++bench_type_i)
+    {
+        std::cout << "Testing bench type " << (bench_type_i+1) << " of " << bench_line_counts.size() << std::endl;
+
+        out << "BENCH INFO" << std::endl;
+        unsigned int line_count = bench_line_counts[bench_type_i];
+        unsigned int query_count = 100;
+        float max_dist = 100;
+
+        out << "Line count: " << line_count << std::endl;
+        out << "Query count: " << query_count << std::endl;
+        out << "Maximum distance: " << max_dist << std::endl;
+
+        out << "START BENCH" << std::endl;
+        std::mutex mutex;
+        parallel_for(query_count, std::function([&out, &mutex, &dev, max_dist, query_count, line_count](unsigned int query_i){
+            unsigned int query_seed, line_seed;
+            {
+                const std::lock_guard<std::mutex> l(mutex);
+                query_seed = dev();
+                line_seed = dev();
+            }
+
+            //Generate line, tree, query
+            auto lines = GenerateRandomLineSegments(line_seed, line_count, max_dist, -100, 100);
+            ModifyLineSegmentLength(lines, 0.1);
+            auto tree = segments::TreeBuilder<LineSegmentWrapper, &LineSegmentWrapper::l>::Build(lines.begin(), lines.end());
+            auto query_point = GenerateRandomPoints(query_seed, 1, max_dist)[0];
+
+            //Perform query
+            std::array<const LineSegmentWrapper *, 1> result{nullptr};
+            float result_dist = 1E99;
+            auto nbResultsFound = tree.FindNeighbours(query_point, result.begin(), result.end(), result_dist);
+
+            {
+                const std::lock_guard<std::mutex> l(mutex);
+                out << Diag::visited << ";" << Diag::minimizations << std::endl;
+            }
+        }));
+        out.flush();
         out << "END BENCH" << std::endl << std::endl;
     }
 
@@ -360,16 +382,26 @@ TEST(Benchmarks, DISABLED_NearestHit_LineSegments_Random)
 }
 
 
-TEST(Benchmarks, DISABLED_NearestNeighbour_Lines_Parallel)
+TEST(Benchmarks, DISABLED_NearestNeighbour_Lines_SceneFile)
 {
-    std::fstream out(output_path+"NearestNeighbour_Lines_Parallel.txt", std::fstream::out | std::fstream::app);
+    std::random_device dev{};
+
+    //"/media/wouter/Data2/Thesis/misc/sphere_lines.txt"
+    std::string scene_filename = "/media/wouter/Data2/Thesis/misc/underwater_lines.txt";
+    std::string scene_name = "sphere"; //sphere, underwater
+    std::string filename;
+    filename = output_path+"NearestNeighbour_Lines_Scene_"+scene_name+".txt";
+
+    std::vector<unsigned int> bench_line_counts = {100, 1000, 10000, 100000, 1000000};
+
+    std::fstream out(filename, std::fstream::out | std::fstream::app);
     if(out.fail())
     {
         std::cerr << "Failed to open file" << std::endl;
         return;
     }
 
-    std::vector<unsigned int> bench_line_counts = {100, 250000, 500000, 750000, 1000000};
+    std::vector<LineWrapper> all_lines = LoadFromFile(scene_filename);
 
     for(int bench_type_i = 0; bench_type_i < bench_line_counts.size(); ++bench_type_i)
     {
@@ -377,61 +409,103 @@ TEST(Benchmarks, DISABLED_NearestNeighbour_Lines_Parallel)
 
         out << "BENCH INFO" << std::endl;
         unsigned int line_count = bench_line_counts[bench_type_i];
-        unsigned int query_count = 10;
-        unsigned int iteration_count = 10;
-        float max_dist = 100;
+        unsigned int query_count = 100;
+        float max_dist = 5;
 
         out << "Line count: " << line_count << std::endl;
         out << "Query count: " << query_count << std::endl;
-        out << "Iteration count: " << iteration_count << std::endl;
         out << "Maximum distance: " << max_dist << std::endl;
 
         out << "START BENCH" << std::endl;
-        for(int i = 0; i < iteration_count; ++i)
-        {
-            std::cout << "Iteration " << (i+1) << " of " << iteration_count << std::endl;
+        std::mutex mutex;
+        parallel_for(query_count, std::function([&out, &mutex, &dev, max_dist, query_count, &all_lines, line_count](unsigned int query_i){
             unsigned int query_seed, line_seed;
             {
-                std::random_device dev{};
+                const std::lock_guard<std::mutex> l(mutex);
                 query_seed = dev();
                 line_seed = dev();
             }
 
-            out << "Query generation seed: " << query_seed << std::endl;
-            out << "Line generation seed: " << line_seed << std::endl;
+            //Generate line, tree and query
+            std::vector<LineWrapper> lines = SampleRandomLines(all_lines, line_seed, line_count);
+            auto tree = TreeBuilder<LineWrapper, &LineWrapper::l>::Build(lines.begin(), lines.end());
+            auto query_point = GenerateRandomPoints(query_seed, 1, max_dist)[0];
 
-            //Generate lines and tree
-            std::cout << "Generating lines & tree\r";
+            //Perform query
+            std::array<const LineWrapper *, 1> result{nullptr};
+            float result_dist = 1E99;
+            auto nbResultsFound = tree.FindNeighbours(query_point, result.begin(), result.end(), result_dist);
+
+            {
+                const std::lock_guard<std::mutex> l(mutex);
+                out << Diag::visited << ";" << Diag::minimizations << std::endl;
+            }
+        }));
+        out.flush();
+        out << "END BENCH" << std::endl << std::endl;
+    }
+
+    out.flush();
+    out.close();
+}
+
+TEST(Benchmarks, DISABLED_NearestNeighbour_Lines_Parallel)
+{
+    std::random_device dev{};
+
+    std::fstream out(output_path+"NearestNeighbour_Lines_Parallel.txt", std::fstream::out | std::fstream::app);
+    if(out.fail())
+    {
+        std::cerr << "Failed to open file" << std::endl;
+        return;
+    }
+
+    //std::vector<unsigned int> bench_line_counts = {100, 250000, 500000, 750000, 1000000};
+    std::vector<unsigned int> bench_line_counts = {100, 1000, 10000, 100000, 1000000};
+
+    for(int bench_type_i = 0; bench_type_i < bench_line_counts.size(); ++bench_type_i)
+    {
+        std::cout << "Testing bench type " << (bench_type_i+1) << " of " << bench_line_counts.size() << std::endl;
+
+        out << "BENCH INFO" << std::endl;
+        unsigned int line_count = bench_line_counts[bench_type_i];
+        unsigned int query_count = 100;
+        float max_dist = 100;
+
+        out << "Line count: " << line_count << std::endl;
+        out << "Query count: " << query_count << std::endl;
+        out << "Maximum distance: " << max_dist << std::endl;
+
+        out << "START BENCH" << std::endl;
+        std::mutex mutex;
+        parallel_for(query_count, std::function([&out, &mutex, &dev, max_dist, query_count, line_count](unsigned int query_i){
+            unsigned int query_seed, line_seed;
+            {
+                const std::lock_guard<std::mutex> l(mutex);
+                query_seed = dev();
+                line_seed = dev();
+            }
+
+            //Generate line, tree, query
             std::default_random_engine rng{line_seed+1};
             std::uniform_real_distribution<float> dist(0, 1);
             Vector3f direction(dist(rng), dist(rng), dist(rng));
             direction.normalize();
             std::vector<LineWrapper> lines = GenerateParallelLines(line_seed, line_count, max_dist, direction);
             auto tree = TreeBuilder<LineWrapper, &LineWrapper::l>::Build(lines.begin(), lines.end());
+            auto query_point = GenerateRandomPoints(query_seed, 1, max_dist)[0];
 
-            //Generate query points
-            std::cout << "Generating query points\r";
-            auto query_points = GenerateRandomPoints(query_seed, query_count, max_dist);
+            //Perform query
+            std::array<const LineWrapper *, 1> result{nullptr};
+            float result_dist = 1E99;
+            auto nbResultsFound = tree.FindNeighbours(query_point, result.begin(), result.end(), result_dist);
 
-            //Perform queries
-            out << "START DATA" << std::endl;
-            std::cout << "Running queries        \r";
-            std::mutex mutex;
-            parallel_for(query_points.size(), std::function([&query_points, &tree, &out, &mutex](std::vector<Vector3f>::size_type query_i){
-                const auto& query = query_points[query_i];
-                std::array<const LineWrapper *, 1> result{nullptr};
-                float result_dist = 1E99;
-                auto nbResultsFound = tree.FindNeighbours(query, result.begin(), result.end(), result_dist);
-
-                {
-                    const std::lock_guard<std::mutex> l(mutex);
-                    out << Diag::visited << ";" << Diag::minimizations << std::endl;
-                }
-            }));
-            std::cout << "                       \r";
-            out << "END DATA" << std::endl;
-            out.flush();
-        }
+            {
+                const std::lock_guard<std::mutex> l(mutex);
+                out << Diag::visited << ";" << Diag::minimizations << std::endl;
+            }
+        }));
+        out.flush();
         out << "END BENCH" << std::endl << std::endl;
     }
 
@@ -441,6 +515,8 @@ TEST(Benchmarks, DISABLED_NearestNeighbour_Lines_Parallel)
 
 TEST(Benchmarks, DISABLED_NearestNeighbour_Lines_EquiDistant)
 {
+    std::random_device dev{};
+
     std::fstream out(output_path+"NearestNeighbour_Lines_EquiDistant.txt", std::fstream::out | std::fstream::app);
     if(out.fail())
     {
@@ -448,7 +524,8 @@ TEST(Benchmarks, DISABLED_NearestNeighbour_Lines_EquiDistant)
         return;
     }
 
-    std::vector<unsigned int> bench_line_counts = {100, 250000, 500000, 750000, 1000000};
+    //std::vector<unsigned int> bench_line_counts = {100, 250000, 500000, 750000, 1000000};
+    std::vector<unsigned int> bench_line_counts = {100, 1000, 10000, 100000, 1000000};
 
     for(int bench_type_i = 0; bench_type_i < bench_line_counts.size(); ++bench_type_i)
     {
@@ -456,57 +533,39 @@ TEST(Benchmarks, DISABLED_NearestNeighbour_Lines_EquiDistant)
 
         out << "BENCH INFO" << std::endl;
         unsigned int line_count = bench_line_counts[bench_type_i];
-        unsigned int query_count = 10;
-        unsigned int iteration_count = 10;
+        unsigned int query_count = 100;
         float max_dist = 100;
 
         out << "Line count: " << line_count << std::endl;
         out << "Query count: " << query_count << std::endl;
-        out << "Iteration count: " << iteration_count << std::endl;
         out << "Maximum distance: " << max_dist << std::endl;
 
         out << "START BENCH" << std::endl;
-        for(int i = 0; i < iteration_count; ++i)
-        {
-            std::cout << "Iteration " << (i+1) << " of " << iteration_count << std::endl;
+        std::mutex mutex;
+        parallel_for(query_count, std::function([&out, &mutex, &dev, max_dist, query_count, line_count](unsigned int query_i){
             unsigned int query_seed, line_seed;
             {
-                std::random_device dev{};
+                const std::lock_guard<std::mutex> l(mutex);
                 query_seed = dev();
                 line_seed = dev();
             }
 
-            out << "Query generation seed: " << query_seed << std::endl;
-            out << "Line generation seed: " << line_seed << std::endl;
-
             //Generate lines and tree
-            std::cout << "Generating lines & tree\r";
             std::vector<LineWrapper> lines = GenerateEquiDistantLines(line_seed, line_count, max_dist);
             auto tree = TreeBuilder<LineWrapper, &LineWrapper::l>::Build(lines.begin(), lines.end());
+            auto query_point = GenerateRandomPoints(query_seed, 1, max_dist)[0];
 
-            //Generate query points
-            std::cout << "Generating query points\r";
-            auto query_points = GenerateRandomPoints(query_seed, query_count, max_dist);
+            //Perform query
+            std::array<const LineWrapper *, 1> result{nullptr};
+            float result_dist = 1E99;
+            auto nbResultsFound = tree.FindNeighbours(query_point, result.begin(), result.end(), result_dist);
 
-            //Perform queries
-            out << "START DATA" << std::endl;
-            std::cout << "Running queries        \r";
-            std::mutex mutex;
-            parallel_for(query_points.size(), std::function([&query_points, &tree, &out, &mutex](std::vector<Vector3f>::size_type query_i){
-                const auto& query = query_points[query_i];
-                std::array<const LineWrapper *, 1> result{nullptr};
-                float result_dist = 1E99;
-                auto nbResultsFound = tree.FindNeighbours(query, result.begin(), result.end(), result_dist);
-
-                {
-                    const std::lock_guard<std::mutex> l(mutex);
-                    out << Diag::visited << ";" << Diag::minimizations << std::endl;
-                }
-            }));
-            std::cout << "                       \r";
-            out << "END DATA" << std::endl;
-            out.flush();
-        }
+            {
+                const std::lock_guard<std::mutex> l(mutex);
+                out << Diag::visited << ";" << Diag::minimizations << std::endl;
+            }
+        }));
+        out.flush();
         out << "END BENCH" << std::endl << std::endl;
     }
 
@@ -516,6 +575,8 @@ TEST(Benchmarks, DISABLED_NearestNeighbour_Lines_EquiDistant)
 
 TEST(Benchmarks, DISABLED_NearestNeighbour_Lines_EqualMoment)
 {
+    std::random_device dev{};
+
     std::fstream out(output_path+"NearestNeighbour_Lines_EqualMoment.txt", std::fstream::out | std::fstream::app);
     if(out.fail())
     {
@@ -523,7 +584,8 @@ TEST(Benchmarks, DISABLED_NearestNeighbour_Lines_EqualMoment)
         return;
     }
 
-    std::vector<unsigned int> bench_line_counts = {100, 250000, 500000, 750000, 1000000};
+    //std::vector<unsigned int> bench_line_counts = {100, 250000, 500000, 750000, 1000000};
+    std::vector<unsigned int> bench_line_counts = {100, 1000, 10000, 100000, 1000000};
 
     for(int bench_type_i = 0; bench_type_i < bench_line_counts.size(); ++bench_type_i)
     {
@@ -531,31 +593,25 @@ TEST(Benchmarks, DISABLED_NearestNeighbour_Lines_EqualMoment)
 
         out << "BENCH INFO" << std::endl;
         unsigned int line_count = bench_line_counts[bench_type_i];
-        unsigned int query_count = 10;
-        unsigned int iteration_count = 10;
+        unsigned int query_count = 100;
         float max_dist = 100;
 
         out << "Line count: " << line_count << std::endl;
         out << "Query count: " << query_count << std::endl;
-        out << "Iteration count: " << iteration_count << std::endl;
         out << "Maximum distance: " << max_dist << std::endl;
 
         out << "START BENCH" << std::endl;
-        for(int i = 0; i < iteration_count; ++i)
-        {
-            std::cout << "Iteration " << (i+1) << " of " << iteration_count << std::endl;
+
+        std::mutex mutex;
+        parallel_for(query_count, std::function([&out, &mutex, &dev, max_dist, query_count, line_count](unsigned int query_i){
             unsigned int query_seed, line_seed;
             {
-                std::random_device dev{};
+                const std::lock_guard<std::mutex> l(mutex);
                 query_seed = dev();
                 line_seed = dev();
             }
 
-            out << "Query generation seed: " << query_seed << std::endl;
-            out << "Line generation seed: " << line_seed << std::endl;
-
             //Generate lines and tree
-            std::cout << "Generating lines & tree\r";
             std::default_random_engine rng{line_seed+1};
             std::uniform_real_distribution<float> dist(0, 1);
             Vector3f moment(dist(rng), dist(rng), dist(rng));
@@ -563,30 +619,19 @@ TEST(Benchmarks, DISABLED_NearestNeighbour_Lines_EqualMoment)
             moment *= dist(rng) * max_dist;
             std::vector<LineWrapper> lines = GenerateEqualMomentLines(line_seed, line_count, moment);
             auto tree = TreeBuilder<LineWrapper, &LineWrapper::l>::Build(lines.begin(), lines.end());
+            auto query_point = GenerateRandomPoints(query_seed, 1, max_dist)[0];
 
-            //Generate query points
-            std::cout << "Generating query points\r";
-            auto query_points = GenerateRandomPoints(query_seed, query_count, max_dist);
+            //Perform query
+            std::array<const LineWrapper *, 1> result{nullptr};
+            float result_dist = 1E99;
+            auto nbResultsFound = tree.FindNeighbours(query_point, result.begin(), result.end(), result_dist);
 
-            //Perform queries
-            out << "START DATA" << std::endl;
-            std::cout << "Running queries        \r";
-            std::mutex mutex;
-            parallel_for(query_points.size(), std::function([&query_points, &tree, &out, &mutex](std::vector<Vector3f>::size_type query_i){
-                const auto& query = query_points[query_i];
-                std::array<const LineWrapper *, 1> result{nullptr};
-                float result_dist = 1E99;
-                auto nbResultsFound = tree.FindNeighbours(query, result.begin(), result.end(), result_dist);
-
-                {
-                    const std::lock_guard<std::mutex> l(mutex);
-                    out << Diag::visited << ";" << Diag::minimizations << std::endl;
-                }
-            }));
-            std::cout << "                       \r";
-            out << "END DATA" << std::endl;
-            out.flush();
-        }
+            {
+                const std::lock_guard<std::mutex> l(mutex);
+                out << Diag::visited << ";" << Diag::minimizations << std::endl;
+            }
+        }));
+        out.flush();
         out << "END BENCH" << std::endl << std::endl;
     }
 
@@ -618,7 +663,6 @@ TEST(Benchmarks, DISABLED_NearestNeighbour_LineSegments_VaryingLengths)
     //Generate query points
     unsigned int query_count = 100;
     auto query_points = GenerateRandomPoints(query_seed, query_count, max_dist);
-    //auto query_normals = GenerateRandomNormals(query_seed, line_count);
 
     std::vector<float> bench_lineseg_t_min = {-100, -75, -50, -25, -1};
     std::vector<float> bench_lineseg_t_max = { 100,  75,  50,  25,  1};
@@ -642,11 +686,12 @@ TEST(Benchmarks, DISABLED_NearestNeighbour_LineSegments_VaryingLengths)
         out << "START BENCH" << std::endl;
 
         //Modifying segment lengths
-        for(auto& s : lines)
+        /*for(auto& s : lines)
         {
             s.l.t1 = t_min;
             s.l.t2 = t_max;
-        }
+        }*/
+        ModifyLineSegmentLength(lines, t_max-t_min);
 
         //Generate lines and tree
         std::cout << "Generating tree\r";
@@ -751,7 +796,7 @@ TEST(Benchmarks, DISABLED_NearestNeighbour_Lines_RequestSize)
     out.close();
 }
 
-TEST(Benchmarks, DISABLED_NearestNeighbour_Lines_Origin)
+TEST(Benchmarks, NearestNeighbour_Lines_Origin)
 {
     std::fstream out(output_path+"NearestNeighbour_Lines_Origin.txt", std::fstream::out | std::fstream::app);
     if(out.fail())
@@ -761,6 +806,7 @@ TEST(Benchmarks, DISABLED_NearestNeighbour_Lines_Origin)
     }
 
     unsigned int line_count = 100000;
+    unsigned int iterations = 10;
     unsigned int query_count = 100;
     unsigned int query_seed, line_seed;
     {
@@ -770,13 +816,18 @@ TEST(Benchmarks, DISABLED_NearestNeighbour_Lines_Origin)
     }
 
     // Generate lines
-    float max_line_dist = 20;
-    auto lines = GenerateRandomLines(line_seed, line_count, max_line_dist);
-    std::vector<LineWrapper> translated_lines = lines;
+    float max_line_dist = 10;
+    std::vector<std::vector<LineWrapper>> lineSets(iterations);
+    for(unsigned int i = 0; i < iterations; ++i)
+    {
+        lineSets[i] = GenerateRandomLines(line_seed+i, line_count, max_line_dist);
+    }
+    std::vector<std::vector<LineWrapper>> translatedLinesSets = lineSets;
 
     //Generate query points
     float max_query_dist = 100;
     auto query_points = GenerateRandomPoints(query_seed, query_count, max_query_dist);
+    std::vector<Vector3f> translatedQueryPoints = query_points;
 
     //Generate translation vectors
     std::vector<Vector3f> bench_translation_vectors {
@@ -787,6 +838,7 @@ TEST(Benchmarks, DISABLED_NearestNeighbour_Lines_Origin)
         Vector3f(0, 0, 20),
         Vector3f(0, 0, 40),
         Vector3f(0, 0, 60),
+        Vector3f(0, 60, 0),
         Vector3f(std::sqrt(20), std::sqrt(20), 0),
     };
 
@@ -802,16 +854,22 @@ TEST(Benchmarks, DISABLED_NearestNeighbour_Lines_Origin)
         out << "Maximum query distance: " << max_query_dist << std::endl;
         out << "Translation vector: " << translation_vect.transpose() << std::endl;
 
-        for(unsigned int i = 0; i < line_count; ++i)
+        for(unsigned int it = 0; it < iterations; ++it)
         {
-            Vector3f curP = lines[i].l.d.cross(lines[i].l.m);
-            Vector3f p1 = curP + translation_vect;
-            Vector3f p2 = (curP + lines[i].l.d) + translation_vect;
-            translated_lines[i] = LineWrapper(Line::FromTwoPoints(p1, p2));
+            for(unsigned int i = 0; i < line_count; ++i)
+            {
+                Vector3f curP = lineSets[it][i].l.d.cross(lineSets[it][i].l.m);
+                Vector3f p1 = curP + translation_vect;
+                Vector3f p2 = (curP + lineSets[it][i].l.d) + translation_vect;
+                translatedLinesSets[it][i] = LineWrapper(Line::FromTwoPoints(p1, p2));
+            }
         }
-        auto tree = TreeBuilder<LineWrapper, &LineWrapper::l>::Build(translated_lines.begin(), translated_lines.end());
+        for(unsigned int i = 0; i < query_count; ++i)
+        {
+            translatedQueryPoints[i] = query_points[i] + translation_vect;
+        }
 
-        out << "START TREEDEPTH DATA" << std::endl;
+        /*out << "START TREEDEPTH DATA" << std::endl;
         std::function<void(const TreeNode<LineWrapper, &LineWrapper::l>*, unsigned int)> visitor;
         visitor = [&out, &visitor](const TreeNode<LineWrapper, &LineWrapper::l>* curNode, unsigned int curDepth){
             if(curNode == nullptr)
@@ -826,7 +884,7 @@ TEST(Benchmarks, DISABLED_NearestNeighbour_Lines_Origin)
         {
             visitor(sector.rootNode.get(), 1);
         }
-        out << "END TREEDEPTH DATA" << std::endl;
+        out << "END TREEDEPTH DATA" << std::endl;*/
 
         out << "START BENCH" << std::endl;
 
@@ -837,18 +895,23 @@ TEST(Benchmarks, DISABLED_NearestNeighbour_Lines_Origin)
         //Perform queries
         out << "START DATA" << std::endl;
         std::cout << "Running queries        \r";
-        std::mutex mutex;
-        parallel_for(query_points.size(), std::function([&query_points, &tree, &out, &mutex](std::vector<Vector3f>::size_type query_i){
-            const auto& query = query_points[query_i];
-            std::array<const LineWrapper *, 1> result {nullptr};
-            float result_dist = 1E99;
-            auto nbResultsFound = tree.FindNeighbours(query, result.begin(), result.end(), result_dist);
+        for(unsigned int it = 0; it < iterations; ++it)
+        {
+            auto tree = TreeBuilder<LineWrapper, &LineWrapper::l>::Build(translatedLinesSets[it].begin(), translatedLinesSets[it].end());
 
-            {
-                const std::lock_guard<std::mutex> l(mutex);
-                out << Diag::visited << ";" << Diag::minimizations << std::endl;
-            }
-        }));
+            std::mutex mutex;
+            parallel_for(translatedQueryPoints.size(), std::function([&translatedQueryPoints, &tree, &out, &mutex](std::vector<Vector3f>::size_type query_i){
+                const auto& query = translatedQueryPoints[query_i];
+                std::array<const LineWrapper *, 1> result {nullptr};
+                float result_dist = 1E99;
+                auto nbResultsFound = tree.FindNeighbours(query, result.begin(), result.end(), result_dist);
+
+                {
+                    const std::lock_guard<std::mutex> l(mutex);
+                    out << Diag::visited << ";" << Diag::minimizations << std::endl;
+                }
+            }));
+        }
         std::cout << "                       \r";
         out << "END DATA" << std::endl;
         out.flush();
@@ -981,7 +1044,7 @@ TEST(Benchmarks, DISABLED_NearestNeighbour_Lines_Dist_Tightness)
     }
 
     unsigned int line_count = 10000;
-    unsigned int iterations = 10;
+    unsigned int iterations = 1;
     float max_dist = 100;
 
     Diag::force_visit_all = true;
@@ -1021,6 +1084,9 @@ TEST(Benchmarks, DISABLED_NearestNeighbour_Lines_Dist_Tightness)
         out << "Line generation seed: " << line_seed << std::endl;
 
         auto lines = GenerateRandomLines(line_seed, line_count, max_dist);
+        //auto lines = LoadFromFile("/home/wouter/Documents/sphere_lines.txt");
+
+
         auto tree = TreeBuilder<LineWrapper, &LineWrapper::l>::Build(lines.begin(), lines.end());
         auto query_point = GenerateRandomPoints(query_seed, 1, max_dist)[0];
 
@@ -1051,7 +1117,7 @@ TEST(Benchmarks, DISABLED_NearestNeighbour_Lines_Random_SplitTypes)
 
     {
         out << "BENCH INFO" << std::endl;
-        unsigned int iteration_count = 100;
+        unsigned int iteration_count = 10;
         float max_dist = 100;
 
         out << "Line count: " << line_count << std::endl;
@@ -1153,12 +1219,8 @@ TEST(Benchmarks, DISABLED_NearestNeighbour_Lines_Random_SplitTypes_By_Level)
 
             //Generate lines and tree
             std::cout << "Generating lines & tree\r";
-            auto lines = LoadFromFile("/home/wouter/Documents/sphere_lines.txt");
-            for(auto& l : lines)
-            {
-                l.l.m.z() *= 2.0;
-            }
-            //std::vector<LineWrapper> lines = GenerateRandomLines(line_seed, line_count, max_dist);
+            //auto lines = LoadFromFile("/home/wouter/Documents/sphere_lines.txt");
+            std::vector<LineWrapper> lines = GenerateRandomLines(line_seed, line_count, max_dist);
             auto tree = TreeBuilder<LineWrapper, &LineWrapper::l>::Build(lines.begin(), lines.end());
 
             //Perform queries

@@ -23,10 +23,12 @@ struct LineSegmentWrapper
 
 std::vector<LineWrapper> LoadFromFile(const std::string& filename);
 std::vector<LineWrapper> GenerateRandomLines(unsigned int seed, unsigned int lineCount, float maxDist);
+std::vector<LineWrapper> SampleRandomLines(const std::vector<LineWrapper>& all_lines, unsigned int seed, unsigned int lineCount);
 std::vector<LineWrapper> GenerateParallelLines(unsigned int seed, unsigned int lineCount, float maxDist, const Vector3f& direction);
 std::vector<LineWrapper> GenerateEquiDistantLines(unsigned int seed, unsigned int lineCount, float maxDist); //Equidistant from center
 std::vector<LineWrapper> GenerateEqualMomentLines(unsigned int seed, unsigned int lineCount, const Vector3f& moment);
 std::vector<LineSegmentWrapper> GenerateRandomLineSegments(unsigned int seed, unsigned int lineCount, float maxDist, float minT, float maxT);
+void ModifyLineSegmentLength(std::vector<LineSegmentWrapper>& l, float length);
 
 std::vector<Vector3f> GenerateRandomPoints(unsigned int seed, unsigned int pointCount, float maxDist);
 std::vector<Vector3f> GenerateRandomNormals(unsigned int seed, unsigned int normalCount);
