@@ -1,13 +1,6 @@
 # Plückertree - Fast nearest neighbouring line lookup
 
-## Features
- - Lorum
- - Ipsum
+This is the code written for my master thesis with the dutch title "Plückerbomen: efficiënt zoeken van k dichtstbijzijnde rechten rond punt in 3D, met toepassing in photonmapping". (in english: "Plückertrees: efficient search of k nearest lines around point in 3D, with application in photonmapping")
 
-## Getting started
-
-## Documentation
-
-## License
-This library is licensed under the MIT license. (See [choosealicense.com/licenses/mit](https://choosealicense.com/licenses/mit/) for a brief summery)  
-A copy of this license is included in the repository under LICENSE.
+This is research code, so definitely not production ready.
+You can find the PDF of my thesis [here](Thesis.pdf).
